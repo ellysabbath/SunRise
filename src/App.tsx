@@ -162,8 +162,8 @@ export default function App() {
         <Route path="wateja" element={<MuuzajiWateja />} />
         <Route path="carts" element={<MuuzajiCarts />} />
         <Route path="ripoti" element={<MuuzajiRipoti />} />
-        <Route path="ripoti-bidhaa" element={<MuuzajiStoreManage />} />
-        <Route path="store-manage" element={<MuuzajiRipotiBidhaa />} />
+<Route path="ripoti-bidhaa" element={<MuuzajiRipotiBidhaa />} />
+<Route path="store-manage" element={<MuuzajiStoreManage />} />
         <Route path="matumizi" element={<MuuzajiMatumizi />} />
         <Route path="mshahara" element={<MuuzajiMshahara />} />
         <Route path="profile" element={<MyProfile role="muuzaji" />} />

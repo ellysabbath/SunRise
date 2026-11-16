@@ -27,9 +27,9 @@ import { DocumentProvider } from './context/DocumentContext'
 import { MshaharaProvider } from './context/MshaharaContext'
 
 createRoot(document.getElementById('root')!).render(
-  <StoreProvider>
-    <StrictMode>
-      <BrowserRouter>
+  <StrictMode>
+    <BrowserRouter>
+      <StoreProvider>
         <AuthProvider>
           <CustomerProvider>
             <CartProvider>
@@ -65,7 +65,7 @@ createRoot(document.getElementById('root')!).render(
             </CartProvider>
           </CustomerProvider>
         </AuthProvider>
-      </BrowserRouter>
-    </StrictMode>
-  </StoreProvider>
+      </StoreProvider>
+    </BrowserRouter>
+  </StrictMode>
 )
