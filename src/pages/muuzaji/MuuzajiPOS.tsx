@@ -2,17 +2,19 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Search, Plus, Minus, ShoppingCart, Check, Banknote, Smartphone,
   Wallet, X, Loader2, AlertTriangle, Receipt, RefreshCw,
-  CheckCircle2, XCircle, Package,
+  CheckCircle2, XCircle, Package, Store,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { productsApi, type Product } from '../../services/products'
 import { customersApi, type Customer } from '../../services/customers'
 import { ordersApi } from '../../services/orders'
+import { storesApi, type Store as StoreType } from '../../services/stores'
 import { formatTsh } from '../../lib/format'
 import {
   SkeletonProductCard,
   SkeletonSelect,
   SkeletonCartItem,
+  SkeletonLine,
 } from '../../components/Skeleton'
 
 type NjiaMalipo = 'cash' | 'mpesa' | 'tigopesa' | 'deni'
@@ -27,6 +29,7 @@ export default function MuuzajiPOS() {
 
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [store, setStore] = useState<StoreType | null>(null)
   const [loadingData, setLoadingData] = useState(true)
   const [errorData, setErrorData] = useState('')
 
@@ -41,18 +44,31 @@ export default function MuuzajiPOS() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
   // ==================================================================
-  // Load products + customers
+  // Load products + customers + store
   // ==================================================================
   const loadData = async () => {
     setLoadingData(true)
     setErrorData('')
     try {
-      const [prods, custs] = await Promise.all([
-        productsApi.list(),
+      const storeId = user?.store_id || undefined
+
+      const [prods, custs, stores] = await Promise.all([
+        productsApi.list(storeId),
         customersApi.list(),
+        storesApi.list(),
       ])
+
       setProducts(prods.filter((p) => p.is_active))
       setCustomers(custs)
+
+      // ✅ Pata duka la muuzaji
+      if (user?.store_id) {
+        const myStore = stores.find((s) => s.id === user.store_id) || null
+        setStore(myStore)
+      } else {
+        setStore(null)
+      }
+
       if (custs.length > 0 && !mtejaId) setMtejaId(custs[0].id)
     } catch (err: any) {
       setErrorData(
@@ -67,7 +83,7 @@ export default function MuuzajiPOS() {
   useEffect(() => {
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [user?.store_id])
 
   // ==================================================================
   // Filter
@@ -176,8 +192,12 @@ export default function MuuzajiPOS() {
         items: lines.map((l) => ({
           product_id: l.id,
           quantity: l.wingi,
-          unit_price: l.unit_price,
-          unit_cost: l.unit_cost,
+          unit_price: l.product.selling_price
+            ? parseFloat(l.product.selling_price)
+            : l.bei,
+          unit_cost: l.product.cost_price
+            ? parseFloat(l.product.cost_price)
+            : 0,
         })),
       })
 
@@ -188,9 +208,11 @@ export default function MuuzajiPOS() {
           amount: total,
           reference: 'CASH',
         })
-        // Thibitisha cash moja kwa moja
         await ordersApi.confirmPayment(order.id, payment.id)
-        setToast({ msg: `Order #${order.id.slice(0, 8)} imekamilika (Cash).`, ok: true })
+        setToast({
+          msg: `Order #${order.id.slice(0, 8)} imekamilika (Cash).`,
+          ok: true,
+        })
       } else if (njiaMalipo === 'deni') {
         setToast({
           msg: `Order #${order.id.slice(0, 8)} imeandikwa kama DENI.`,
@@ -236,9 +258,26 @@ export default function MuuzajiPOS() {
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900">
               POS
             </h1>
-            <p className="text-sm text-slate-500 mt-1">
-              {user?.full_name || 'Muuzaji'} — Duka lako
-            </p>
+            <div className="text-sm text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+              <span>{user?.full_name || 'Muuzaji'}</span>
+              <span className="text-slate-300">|</span>
+              {loadingData ? (
+                <SkeletonLine className="h-4 w-32" />
+              ) : store ? (
+                <span className="inline-flex items-center gap-1 text-brand-700 font-medium">
+                  <Store size={14} />
+                  {store.name}
+                  <span className="text-slate-400 font-normal">
+                    ({store.location})
+                  </span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-amber-600">
+                  <AlertTriangle size={14} />
+                  Hujapangiwa duka
+                </span>
+              )}
+            </div>
           </div>
           <button
             onClick={loadData}

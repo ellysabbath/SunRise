@@ -81,7 +81,7 @@ export const inventoryApi = {
       .then((r) => r.data),
 
   // ------------------------------------------------------------------
-  // Adjust (moja kwa moja — bila idhini)
+  // Adjust — ✅ SASA ina reference_id
   // ------------------------------------------------------------------
   adjust: (payload: {
     product_id: string;
@@ -89,8 +89,12 @@ export const inventoryApi = {
     quantity: number;
     movement_type: MovementType;
     note?: string;
+    reference_id?: string;       // ✅ MPYA
+    reference_type?: string;     // ✅ MPYA (optional)
   }) =>
-    api.post<StockMovement>("/inventory/adjust/", payload).then((r) => r.data),
+    api
+      .post<StockMovement>("/inventory/adjust/", payload)
+      .then((r) => r.data),
 
   // ------------------------------------------------------------------
   // Stock adjustments (idhini)
