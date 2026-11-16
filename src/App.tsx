@@ -1,0 +1,247 @@
+import { Routes, Route, Navigate } from 'react-router-dom'
+import type { ReactNode } from 'react'
+
+// ---------- LAYOUT ----------
+import Layout from './components/Layout'
+
+// ---------- PUBLIC ----------
+import Landing from './pages/Landing'
+
+// ---------- AUTH ----------
+import Login from './pages/auth/Login'
+import Register from './pages/auth/Register'
+import ForgotPassword from './pages/auth/ForgotPassword'
+import ResetPassword from './pages/auth/ResetPassword'
+import ResetComplete from './pages/auth/ResetComplete'
+import VerifyPhone from './pages/auth/VerifyPhone'
+
+// ---------- MTEJA ----------
+import MtejaHome from './pages/mteja/MtejaHome'
+import MtejaBidhaa from './pages/mteja/MtejaBidhaa'
+import MtejaQuotation from './pages/mteja/MtejaQuotation'
+import MtejaOrders from './pages/mteja/MtejaOrders'
+import MtejaOrder from './pages/mteja/MtejaOrder'
+import MtejaDeni from './pages/mteja/MtejaDeni'
+
+// ---------- MUUZAJI ----------
+import MuuzajiPOS from './pages/muuzaji/MuuzajiPOS'
+import MuuzajiRisiti from './pages/muuzaji/MuuzajiRisiti'
+import MuuzajiPokeaBidhaa from './pages/muuzaji/MuuzajiPokeaBidhaa'
+import MuuzajiWateja from './pages/muuzaji/MuuzajiWateja'
+import MuuzajiCarts from './pages/muuzaji/MuuzajiCarts'
+import MuuzajiRipoti from './pages/muuzaji/MuuzajiRipoti'
+import MuuzajiMatumizi from './pages/muuzaji/MuuzajiMatumizi'
+import MuuzajiRipotiBidhaa from './pages/muuzaji/MuuzajiRipotiBidhaa'
+import MuuzajiMshahara from './pages/muuzaji/MuuzajiMshahara'
+import MuuzajiStoreManage from './pages/muuzaji/MuuzajiStoreManage'
+
+// ---------- MMILIKI ----------
+import MmilikiDashboard from './pages/mmiliki/MmilikiDashboard'
+import MmilikiMaduka from './pages/mmiliki/MmilikiMaduka'
+import MmilikiWafanyakazi from './pages/mmiliki/MmilikiWafanyakazi'
+import MmilikiFaida from './pages/mmiliki/MmilikiFaida'
+import MmilikiZaka from './pages/mmiliki/MmilikiZaka'
+import MmilikiMauzo from './pages/mmiliki/MmilikiMauzo'
+import MmilikiOrders from './pages/mmiliki/MmilikiOrders'
+import MmilikiWateja from './pages/mmiliki/MmilikiWateja'
+import MmilikiMatumizi from './pages/mmiliki/MmilikiMatumizi'
+import MmilikiRipotiBidhaa from './pages/mmiliki/MmilikiRipotiBidhaa'
+import MmilikiStoreManage from './pages/mmiliki/MmilikiStoreManage'
+import MmilikiMishahara from './pages/mmiliki/MmilikiMishahara'
+import UingizaVifaa from './pages/mmiliki/UingizaVifaa'
+
+// ---------- SHARED ----------
+import Notifications from './pages/shared/Notifications'
+import NotificationDetail from './pages/shared/NotificationDetail'
+import MyProfile from './pages/shared/MyProfile'
+import MySettings from './pages/shared/MySettings'
+
+// ---------- AUTH ----------
+import { useAuth } from './context/AuthContext'
+
+// ==================================================================
+// ProtectedRoute — inazuia watu wasioingia
+// ==================================================================
+function ProtectedRoute({
+  children,
+  allow,
+}: {
+  children: ReactNode
+  allow?: string[]
+}) {
+  const { user, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-slate-50">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm text-slate-500 mt-3">Inapakia...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) return <Navigate to="/login" replace />
+
+  if (allow && !allow.includes(user.role)) {
+    return <Navigate to="/" replace />
+  }
+
+  return <>{children}</>
+}
+
+// ==================================================================
+// App
+// ==================================================================
+export default function App() {
+  return (
+    <Routes>
+      {/* ================= PUBLIC ================= */}
+      <Route path="/" element={<Landing />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/verify-phone" element={<VerifyPhone />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/reset-complete" element={<ResetComplete />} />
+
+      {/* ================= NOTIFICATIONS (SHARED) ================= */}
+      {/* ✅ Routes hizi zinafanya kazi kwa roles zote zilizoingia */}
+      <Route
+        path="/notifications"
+        element={
+          <ProtectedRoute>
+            <Notifications />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/notifications/:id"
+        element={
+          <ProtectedRoute>
+            <NotificationDetail />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* ================= MTEJA ================= */}
+      <Route
+        path="/mteja"
+        element={
+          <ProtectedRoute allow={['mteja', 'admin', 'mmiliki']}>
+            <Layout role="mteja" />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<MtejaHome />} />
+        <Route path="bidhaa" element={<MtejaBidhaa />} />
+        <Route path="quotation" element={<MtejaQuotation />} />
+        <Route path="orders" element={<MtejaOrders />} />
+        <Route path="order/:id" element={<MtejaOrder />} />
+        <Route path="deni" element={<MtejaDeni />} />
+        <Route path="profile" element={<MyProfile role="mteja" />} />
+        <Route path="settings" element={<MySettings role="mteja" />} />
+        <Route path="notifications" element={<Notifications />} />
+        <Route path="notifications/:id" element={<NotificationDetail />} />
+      </Route>
+
+      {/* ================= MUUZAJI ================= */}
+      <Route
+        path="/muuzaji"
+        element={
+          <ProtectedRoute allow={['muuzaji', 'mhazini', 'admin', 'mmiliki']}>
+            <Layout role="muuzaji" />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<MuuzajiPOS />} />
+        <Route path="risiti" element={<MuuzajiRisiti />} />
+        <Route path="pokea" element={<MuuzajiPokeaBidhaa />} />
+        <Route path="uingiza" element={<MuuzajiPokeaBidhaa />} />
+        <Route path="wateja" element={<MuuzajiWateja />} />
+        <Route path="carts" element={<MuuzajiCarts />} />
+        <Route path="ripoti" element={<MuuzajiRipoti />} />
+        <Route path="ripoti-bidhaa" element={<MuuzajiStoreManage />} />
+        <Route path="store-manage" element={<MuuzajiRipotiBidhaa />} />
+        <Route path="matumizi" element={<MuuzajiMatumizi />} />
+        <Route path="mshahara" element={<MuuzajiMshahara />} />
+        <Route path="profile" element={<MyProfile role="muuzaji" />} />
+        <Route path="settings" element={<MySettings role="muuzaji" />} />
+        <Route path="notifications" element={<Notifications />} />
+        <Route path="notifications/:id" element={<NotificationDetail />} />
+      </Route>
+
+      {/* ================= MMILIKI ================= */}
+      <Route
+        path="/mmiliki"
+        element={
+          <ProtectedRoute allow={['mmiliki', 'admin']}>
+            <Layout role="mmiliki" />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<MmilikiDashboard />} />
+        <Route path="maduka" element={<MmilikiMaduka />} />
+        <Route path="wafanyakazi" element={<MmilikiWafanyakazi />} />
+        <Route path="mishahara" element={<MmilikiMishahara />} />
+        <Route path="faida" element={<MmilikiFaida />} />
+        <Route path="zaka" element={<MmilikiZaka />} />
+        <Route path="mauzo" element={<MmilikiMauzo />} />
+        <Route path="orders" element={<MmilikiOrders />} />
+        <Route path="wateja" element={<MmilikiWateja />} />
+        <Route path="matumizi" element={<MmilikiMatumizi />} />
+        <Route path="ripoti-bidhaa" element={<MmilikiRipotiBidhaa />} />
+        <Route path="store-manage" element={<MmilikiStoreManage />} />
+        <Route path="uingiza" element={<UingizaVifaa role="mmiliki" />} />
+        <Route path="profile" element={<MyProfile role="mmiliki" />} />
+        <Route path="settings" element={<MySettings role="mmiliki" />} />
+        <Route path="notifications" element={<Notifications />} />
+        <Route path="notifications/:id" element={<NotificationDetail />} />
+      </Route>
+
+      {/* ================= ADMIN ================= */}
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute allow={['admin']}>
+            <Layout role="mmiliki" />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="uingiza" replace />} />
+        <Route path="uingiza" element={<UingizaVifaa role="admin" />} />
+        <Route path="notifications" element={<Notifications />} />
+        <Route path="notifications/:id" element={<NotificationDetail />} />
+      </Route>
+
+      {/* ================= 404 ================= */}
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  )
+}
+
+// ==================================================================
+// NotFound
+// ==================================================================
+function NotFound() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-50/30 grid place-items-center p-4">
+      <div className="text-center max-w-md">
+        <div className="text-7xl font-black text-brand-600 mb-2">404</div>
+        <h1 className="text-2xl font-bold text-slate-900 mb-2">
+          Ukurasa Haupo
+        </h1>
+        <p className="text-sm text-slate-500 mb-6">
+          Ukurasa uliouomba haupo au umehamishwa.
+        </p>
+        <a
+          href="/"
+          className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-semibold hover:bg-brand-700"
+        >
+          Rudi Nyumbani
+        </a>
+      </div>
+    </div>
+  )
+}
