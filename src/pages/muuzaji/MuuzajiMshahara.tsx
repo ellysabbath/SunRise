@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Wallet, CheckCircle2, Clock, RefreshCw, AlertTriangle,
-  Calendar, TrendingUp, Banknote, Loader2,
+  Calendar, Store, Search, ListFilter, User, Lock,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { staffApi, type Salary } from '../../services/staff'
+import { storesApi, type Store as StoreType } from '../../services/stores'
 import { formatTsh, formatDate } from '../../lib/format'
 import { SkeletonLine } from '../../components/Skeleton'
 
@@ -12,18 +13,8 @@ import { SkeletonLine } from '../../components/Skeleton'
 // Meta
 // ==================================================================
 const MONTHS_SW = [
-  'Januari',
-  'Februari',
-  'Machi',
-  'Aprili',
-  'Mei',
-  'Juni',
-  'Julai',
-  'Agosti',
-  'Septemba',
-  'Oktoba',
-  'Novemba',
-  'Desemba',
+  'Januari', 'Februari', 'Machi', 'Aprili', 'Mei', 'Juni',
+  'Julai', 'Agosti', 'Septemba', 'Oktoba', 'Novemba', 'Desemba',
 ]
 
 function formatMonth(iso: string): string {
@@ -36,25 +27,74 @@ function formatMonth(iso: string): string {
   }
 }
 
+function computeNet(s: Salary): number {
+  const basic = parseFloat(s.basic_salary || '0')
+  const allow = parseFloat(s.allowances || '0')
+  const deduct = parseFloat(s.deductions || '0')
+  return basic + allow - deduct
+}
+
 // ==================================================================
 // Page
 // ==================================================================
 export default function MuuzajiMshahara() {
   const { user } = useAuth()
 
+  // ================================================================
+  // ✅ SIRI: MTU ALIYEINGIA PEKEE
+  // ================================================================
+  const loggedInUserId = user?.id || undefined
+  const loggedInStoreId = user?.store_id || undefined
+
   const [salaries, setSalaries] = useState<Salary[]>([])
+  const [store, setStore] = useState<StoreType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [q, setQ] = useState('')
+  const [filter, setFilter] = useState<'zote' | 'imelipwa' | 'inasubiri'>('zote')
 
   // ------------------------------------------------------------------
-  // Load
+  // Load — ✅ SIRI: staff = loggedInUserId PEKEE
   // ------------------------------------------------------------------
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
+
+    // ✅ LAZIMA uwe umeingia
+    if (!loggedInUserId) {
+      setError('Hujajisajili. Ingia tena.')
+      setLoading(false)
+      return
+    }
+
+    // ✅ LAZIMA uwe na duka
+    if (!loggedInStoreId) {
+      setError('Hujapangiwa duka. Wasiliana na mmiliki.')
+      setLoading(false)
+      return
+    }
+
+    // ✅ Role guard — mshahara ni wa muuzaji/mmiliki pekee
+    //    (mteja hawezi kuona mshahara kabisa)
+    if (user.role !== 'muuzaji' && user.role !== 'mmiliki') {
+      setError('Huna ruhusa ya kuona mshahara. Hii ni taarifa ya siri.')
+      setLoading(false)
+      return
+    }
+
     try {
-      const data = await staffApi.salaries({ staff: user?.id })
+      // ✅ SIRI KAMILI: staff = loggedInUserId, store = loggedInStoreId
+      //    Hakuna mtu mwingine, hakuna duka lingine
+      const [data, myStore] = await Promise.all([
+        staffApi.salaries({
+          staff: loggedInUserId,    // ✅ MTU ALIYEINGIA PEKEE
+          store: loggedInStoreId,   // ✅ DUKA LA MTU ALIYEINGIA PEKEE
+        }),
+        storesApi.get(loggedInStoreId),
+      ])
+
       setSalaries(data)
+      setStore(myStore)
     } catch (err: any) {
       setError(
         err?.response?.data?.detail ||
@@ -63,26 +103,57 @@ export default function MuuzajiMshahara() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [loggedInUserId, loggedInStoreId, user?.role])
 
   useEffect(() => {
-    if (user?.id) load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id])
+    load()
+  }, [load])
 
   // ------------------------------------------------------------------
-  // Stats
+  // ✅ ULINZI WA MWISHO: chuja tena — mshahara wa MTU HUYU + DUKA HILI pekee
+  // ------------------------------------------------------------------
+  const mySalaries = useMemo(() => {
+    if (!loggedInUserId || !loggedInStoreId) return []
+
+    return salaries.filter((s) => {
+      // ✅ Mshahara LAZIMA uwe wa mtumiaji aliyeingia
+      if (s.staff_id !== loggedInUserId) return false
+
+      // ✅ Mshahara LAZIMA uwe wa duka la mtumiaji aliyeingia
+      if (s.store_id !== loggedInStoreId) return false
+
+      return true
+    })
+  }, [salaries, loggedInUserId, loggedInStoreId])
+
+  // ------------------------------------------------------------------
+  // Filter — search + status (juu ya mySalaries)
+  // ------------------------------------------------------------------
+  const filtered = useMemo(() => {
+    const query = q.toLowerCase().trim()
+    return mySalaries.filter((s) => {
+      if (filter !== 'zote' && s.status !== filter) return false
+      if (!query) return true
+      return (
+        formatMonth(s.month).toLowerCase().includes(query) ||
+        (s.store_name || '').toLowerCase().includes(query)
+      )
+    })
+  }, [mySalaries, q, filter])
+
+  // ------------------------------------------------------------------
+  // Stats — kwa mySalaries pekee
   // ------------------------------------------------------------------
   const stats = useMemo(() => {
-    const jumla = salaries.length
-    const imelipwa = salaries
+    const jumla = mySalaries.length
+    const imelipwa = mySalaries
       .filter((s) => s.status === 'imelipwa')
-      .reduce((s, x) => s + parseFloat(x.total_paid || '0'), 0)
-    const inasubiri = salaries
+      .reduce((sum, x) => sum + computeNet(x), 0)
+    const inasubiri = mySalaries
       .filter((s) => s.status === 'inasubiri')
-      .reduce((s, x) => s + parseFloat(x.total_paid || '0'), 0)
+      .reduce((sum, x) => sum + computeNet(x), 0)
     return { jumla, imelipwa, inasubiri }
-  }, [salaries])
+  }, [mySalaries])
 
   // ------------------------------------------------------------------
   // Render
@@ -94,10 +165,35 @@ export default function MuuzajiMshahara() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
             <Wallet size={26} className="text-brand-600" /> Mshahara Wangu
+            <span
+              className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded"
+              title="Taarifa hii ni ya siri — wewe pekee unaweza kuiona"
+            >
+              <Lock size={10} /> Siri
+            </span>
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Historia ya mishahara yako — {user?.full_name || 'Muuzaji'}
-          </p>
+          <div className="text-sm text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1">
+              <User size={12} /> {user?.full_name || 'Muuzaji'}
+            </span>
+            <span className="text-slate-300">|</span>
+            {loading ? (
+              <SkeletonLine className="h-4 w-32" />
+            ) : store ? (
+              <span className="inline-flex items-center gap-1 text-brand-700 font-medium">
+                <Store size={14} />
+                {store.name}
+                <span className="text-slate-400 font-normal">
+                  ({store.location})
+                </span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-amber-600">
+                <AlertTriangle size={14} />
+                Hujapangiwa duka
+              </span>
+            )}
+          </div>
         </div>
         <button
           onClick={load}
@@ -142,16 +238,53 @@ export default function MuuzajiMshahara() {
         <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <div className="flex-1">{error}</div>
-          <button
-            onClick={load}
-            className="text-xs font-semibold underline"
-          >
+          <button onClick={load} className="text-xs font-semibold underline">
             Jaribu tena
           </button>
         </div>
       )}
 
-      {/* Loading — skeleton list */}
+      {/* Filter + Search */}
+      {!loading && mySalaries.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-3 space-y-2">
+          <div className="relative">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Tafuta kwa mwezi..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm"
+            />
+          </div>
+          <div className="flex flex-wrap gap-1.5 items-center">
+            <ListFilter size={14} className="text-slate-400" />
+            {(
+              [
+                { key: 'zote', label: 'Zote' },
+                { key: 'imelipwa', label: 'Imelipwa' },
+                { key: 'inasubiri', label: 'Inasubiri' },
+              ] as const
+            ).map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${
+                  filter === f.key
+                    ? 'bg-brand-600 text-white border-brand-600 font-semibold'
+                    : 'bg-white border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Loading */}
       {loading && (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -161,21 +294,32 @@ export default function MuuzajiMshahara() {
       )}
 
       {/* Empty */}
-      {!loading && salaries.length === 0 && !error && (
+      {!loading && mySalaries.length === 0 && !error && (
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
           <Wallet size={40} className="mx-auto text-slate-300 mb-3" />
           <h3 className="font-semibold">Hakuna mishahara bado</h3>
           <p className="text-sm text-slate-500 mt-1">
-            Mshahara wako utaonekana hapa mmiliki akikusajili.
+            Mshahara wako utaonekana hapa mmiliki akikusajili kwenye duka lako.
           </p>
         </div>
       )}
 
+      {/* Hakuna matokeo ya filter */}
+      {!loading && mySalaries.length > 0 && filtered.length === 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center">
+          <Search size={32} className="mx-auto text-slate-300 mb-2" />
+          <div className="text-sm text-slate-500">
+            Hakuna mishahara inayolingana na filter.
+          </div>
+        </div>
+      )}
+
       {/* List */}
-      {!loading && salaries.length > 0 && (
+      {!loading && filtered.length > 0 && (
         <div className="space-y-2">
-          {salaries.map((m) => {
+          {filtered.map((m) => {
             const isPaid = m.status === 'imelipwa'
+            const net = computeNet(m)
             return (
               <div
                 key={m.id}
@@ -198,7 +342,8 @@ export default function MuuzajiMshahara() {
                       <div className="font-semibold text-sm">
                         {formatMonth(m.month)}
                       </div>
-                      <div className="text-xs text-slate-500">
+                      <div className="text-xs text-slate-500 inline-flex items-center gap-1">
+                        <Store size={10} />
                         {m.store_name || '—'}
                       </div>
                       {isPaid && m.paid_at && (
@@ -211,7 +356,7 @@ export default function MuuzajiMshahara() {
 
                   <div className="sm:text-right shrink-0">
                     <div className="text-base font-bold text-slate-900">
-                      {formatTsh(m.total_paid)}
+                      {formatTsh(net)}
                     </div>
                     <div
                       className={`text-[10px] uppercase font-semibold inline-flex items-center gap-1 mt-0.5 ${

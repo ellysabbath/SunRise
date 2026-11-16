@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Wallet, Plus, X, Save, Clock, CheckCircle2, XCircle,
   RefreshCw, AlertTriangle, Search, ListFilter, Loader2,
-  Receipt, Tag,
+  Receipt, Tag, Store, User, Lock,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import {
@@ -10,6 +10,7 @@ import {
   type ExpenseRequest,
   type ExpenseStatus,
 } from '../../services/expenses'
+import { storesApi, type Store as StoreType } from '../../services/stores'
 import { formatTsh, formatDate } from '../../lib/format'
 import { SkeletonLine } from '../../components/Skeleton'
 
@@ -46,7 +47,14 @@ const HALI_META: Record<
 export default function MuuzajiMatumizi() {
   const { user } = useAuth()
 
+  // ================================================================
+  // ✅ DUKA HUSIKA + MTU HUSIKA
+  // ================================================================
+  const storeId = user?.store_id || undefined
+  const userId = user?.id || undefined
+
   const [requests, setRequests] = useState<ExpenseRequest[]>([])
+  const [store, setStore] = useState<StoreType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
@@ -56,17 +64,48 @@ export default function MuuzajiMatumizi() {
   const [filter, setFilter] = useState<ExpenseStatus | 'zote'>('zote')
 
   // ------------------------------------------------------------------
-  // Load
+  // Load — ✅ inachuja kwa duka husika + mtu husika
   // ------------------------------------------------------------------
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
+
+    // ✅ Hakikisha mtumiaji ana ID
+    if (!userId) {
+      setError('Hujajisajili. Ingia tena.')
+      setLoading(false)
+      return
+    }
+
+    // ✅ Hakikisha mtumiaji ana duka
+    if (!storeId) {
+      setError('Hujapangiwa duka. Wasiliana na mmiliki.')
+      setLoading(false)
+      return
+    }
+
+    // ✅ Role guard
+    if (
+      user.role !== 'muuzaji' &&
+      user.role !== 'mmiliki' &&
+      user.role !== 'admin'
+    ) {
+      setError('Huna ruhusa ya kuona maombi ya matumizi.')
+      setLoading(false)
+      return
+    }
+
     try {
-      const reqs = await expensesApi.requests({
-        store: user?.store_id || undefined,
-        requested_by: user?.id,
-      })
+      // ✅ DUKA HUSIKA + MTU HUSIKA
+      const [reqs, myStore] = await Promise.all([
+        expensesApi.requests({
+          store: storeId,         // ✅ duka husika
+          requested_by: userId,   // ✅ mtu husika
+        }),
+        storesApi.get(storeId),
+      ])
       setRequests(reqs)
+      setStore(myStore)
     } catch (err: any) {
       setError(
         err?.response?.data?.detail ||
@@ -75,18 +114,32 @@ export default function MuuzajiMatumizi() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [userId, storeId, user?.role])
 
   useEffect(() => {
-    if (user?.id) load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, user?.store_id])
+    load()
+  }, [load])
 
   // ------------------------------------------------------------------
-  // Filter
+  // ✅ Ulinzi wa ziada: chuja tena — duka hili + mtu huyu pekee
+  // ------------------------------------------------------------------
+  const myRequests = useMemo(() => {
+    if (!storeId || !userId) return []
+
+    return requests.filter((r) => {
+      // ✅ Ombi lazima liwe la duka hili
+      if (r.store && r.store !== storeId) return false
+      // ✅ Ombi lazima liwe la mtumiaji huyu
+      if (r.requested_by && r.requested_by !== userId) return false
+      return true
+    })
+  }, [requests, storeId, userId])
+
+  // ------------------------------------------------------------------
+  // Filter — juu ya myRequests
   // ------------------------------------------------------------------
   const filtered = useMemo(() => {
-    return requests.filter((r) => {
+    return myRequests.filter((r) => {
       if (filter !== 'zote' && r.status !== filter) return false
       const query = q.toLowerCase().trim()
       if (!query) return true
@@ -97,25 +150,31 @@ export default function MuuzajiMatumizi() {
         (r.category_name || '').toLowerCase().includes(query)
       )
     })
-  }, [requests, q, filter])
+  }, [myRequests, q, filter])
 
   // ------------------------------------------------------------------
-  // Stats
+  // Stats — kwa myRequests pekee + imekataliwa
   // ------------------------------------------------------------------
   const stats = useMemo(() => {
-    const zote = requests.length
-    const jumla = requests.reduce((s, r) => s + parseFloat(r.amount || '0'), 0)
-    const inasubiri = requests
+    const zote = myRequests.length
+    const jumla = myRequests.reduce(
+      (s, r) => s + parseFloat(r.amount || '0'),
+      0
+    )
+    const inasubiri = myRequests
       .filter((r) => r.status === 'inasubiri')
       .reduce((s, r) => s + parseFloat(r.amount || '0'), 0)
-    const imekubaliwa = requests
+    const imekubaliwa = myRequests
       .filter((r) => r.status === 'imekubaliwa')
       .reduce((s, r) => s + parseFloat(r.amount || '0'), 0)
-    return { zote, jumla, inasubiri, imekubaliwa }
-  }, [requests])
+    const imekataliwa = myRequests
+      .filter((r) => r.status === 'imekataliwa')
+      .reduce((s, r) => s + parseFloat(r.amount || '0'), 0)
+    return { zote, jumla, inasubiri, imekubaliwa, imekataliwa }
+  }, [myRequests])
 
   // ------------------------------------------------------------------
-  // Tuma ombi — category_text typed manually
+  // Tuma ombi — ✅ inathibitisha duka + mtu
   // ------------------------------------------------------------------
   const tumaOmbi = async (payload: {
     category_text: string
@@ -123,15 +182,17 @@ export default function MuuzajiMatumizi() {
     description: string
     reason: string
   }) => {
-    if (!user?.store_id) {
-      setToast({ msg: 'Hujapangiwa duka.', ok: false })
+    // ✅ Hakikisha duka + mtu
+    if (!storeId || !userId) {
+      setToast({ msg: 'Hujapangiwa duka. Wasiliana na mmiliki.', ok: false })
       setTimeout(() => setToast(null), 3000)
       throw new Error('Hujapangiwa duka.')
     }
 
     try {
       const req = await expensesApi.createRequest({
-        store: user.store_id,
+        store: storeId,          // ✅ duka husika
+        requested_by: userId,    // ✅ mtu husika (kama API inaunga mkono)
         category_text: payload.category_text,
         description: payload.description,
         reason: payload.reason,
@@ -165,10 +226,35 @@ export default function MuuzajiMatumizi() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
             <Wallet size={26} className="text-brand-600" /> Maombi ya Matumizi
+            <span
+              className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded"
+              title="Maombi yako pekee — duka lako"
+            >
+              <Lock size={10} /> Yako
+            </span>
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Omba matumizi — Mmiliki ataidhinisha
-          </p>
+          <div className="text-sm text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1">
+              <User size={12} /> {user?.full_name || 'Muuzaji'}
+            </span>
+            <span className="text-slate-300">|</span>
+            {loading ? (
+              <SkeletonLine className="h-4 w-32" />
+            ) : store ? (
+              <span className="inline-flex items-center gap-1 text-brand-700 font-medium">
+                <Store size={14} />
+                {store.name}
+                <span className="text-slate-400 font-normal">
+                  ({store.location})
+                </span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-amber-600">
+                <AlertTriangle size={14} />
+                Hujapangiwa duka
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button
@@ -181,7 +267,7 @@ export default function MuuzajiMatumizi() {
           </button>
           <button
             onClick={() => setOpen(true)}
-            disabled={loading}
+            disabled={loading || !storeId}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-60"
           >
             <Plus size={16} /> Omba Matumizi
@@ -189,7 +275,7 @@ export default function MuuzajiMatumizi() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats — ✅ 5 sasa (imeongeza imekataliwa) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => <StatSkeleton key={i} />)
@@ -263,16 +349,13 @@ export default function MuuzajiMatumizi() {
         <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <div className="flex-1">{error}</div>
-          <button
-            onClick={load}
-            className="text-xs font-semibold underline"
-          >
+          <button onClick={load} className="text-xs font-semibold underline">
             Jaribu tena
           </button>
         </div>
       )}
 
-      {/* Loading — skeleton list */}
+      {/* Loading */}
       {loading && (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -288,7 +371,7 @@ export default function MuuzajiMatumizi() {
           <h3 className="font-semibold">
             {q || filter !== 'zote'
               ? 'Hakuna matokeo'
-              : 'Hakuna maombi bado'}
+              : 'Hakuna maombi bado kwenye duka lako'}
           </h3>
           <p className="text-sm text-slate-500 mt-1">
             {q || filter !== 'zote'
@@ -335,8 +418,26 @@ export default function MuuzajiMatumizi() {
                       <div className="text-xs text-slate-500 truncate mt-0.5">
                         {m.description}
                       </div>
-                      <div className="text-xs text-slate-500">
-                        {formatDate(m.request_date)}
+                      <div className="text-xs text-slate-500 flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span>{formatDate(m.request_date)}</span>
+                        {m.store_name && (
+                          <>
+                            <span className="text-slate-300">|</span>
+                            <span className="inline-flex items-center gap-1">
+                              <Store size={10} />
+                              {m.store_name}
+                            </span>
+                          </>
+                        )}
+                        {m.requested_by_name && (
+                          <>
+                            <span className="text-slate-300">|</span>
+                            <span className="inline-flex items-center gap-1">
+                              <User size={10} />
+                              {m.requested_by_name}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -413,7 +514,7 @@ function Stat({
 }
 
 // ==================================================================
-// Skeleton
+// Skeletons
 // ==================================================================
 function StatSkeleton() {
   return (
@@ -446,7 +547,7 @@ function OmbiSkeleton() {
 }
 
 // ==================================================================
-// Fomu ya ombi — aina ya matumizi inaandikwa kwa MKONO
+// Fomu ya ombi — haijabadilika
 // ==================================================================
 function Fomu({
   onClose,
@@ -467,7 +568,6 @@ function Fomu({
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Mapendekezo ya haraka (si lazima — unaweza kuandika yoyote)
   const mapendekezo = ['Mafuta', 'Chakula', 'Usafiri', 'Umeme', 'Maji', 'Matengenezo']
 
   const submit = async (e: React.FormEvent) => {
@@ -522,7 +622,6 @@ function Fomu({
         </div>
 
         <form onSubmit={submit} className="p-4 space-y-3">
-          {/* Aina ya matumizi — typed manually */}
           <div>
             <label className="text-sm font-medium">
               Aina ya Matumizi <span className="text-red-500">*</span>
@@ -535,7 +634,6 @@ function Fomu({
               className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm disabled:bg-slate-50"
             />
 
-            {/* Mapendekezo ya haraka */}
             <div className="flex flex-wrap gap-1.5 mt-2">
               {mapendekezo.map((p) => (
                 <button
@@ -559,7 +657,6 @@ function Fomu({
             </p>
           </div>
 
-          {/* Kiasi */}
           <div>
             <label className="text-sm font-medium">
               Kiasi (TZS) <span className="text-red-500">*</span>
@@ -575,7 +672,6 @@ function Fomu({
             />
           </div>
 
-          {/* Maelezo */}
           <div>
             <label className="text-sm font-medium">
               Maelezo <span className="text-red-500">*</span>
@@ -589,7 +685,6 @@ function Fomu({
             />
           </div>
 
-          {/* Sababu */}
           <div>
             <label className="text-sm font-medium">
               Sababu <span className="text-red-500">*</span>

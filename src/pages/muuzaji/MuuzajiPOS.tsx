@@ -9,6 +9,10 @@ import { productsApi, type Product } from '../../services/products'
 import { customersApi, type Customer } from '../../services/customers'
 import { ordersApi } from '../../services/orders'
 import { storesApi, type Store as StoreType } from '../../services/stores'
+import {
+  inventoryApi,
+  type StockLevel,
+} from '../../services/inventory'
 import { formatTsh } from '../../lib/format'
 import {
   SkeletonProductCard,
@@ -24,10 +28,16 @@ interface CartLine {
   wingi: number
 }
 
+// Product pamoja na stoki yake
+interface ProductWithStock extends Product {
+  stock_quantity: number
+  has_stock: boolean
+}
+
 export default function MuuzajiPOS() {
   const { user } = useAuth()
 
-  const [products, setProducts] = useState<Product[]>([])
+  const [products, setProducts] = useState<ProductWithStock[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [store, setStore] = useState<StoreType | null>(null)
   const [loadingData, setLoadingData] = useState(true)
@@ -44,7 +54,7 @@ export default function MuuzajiPOS() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
   // ==================================================================
-  // Load products + customers + store
+  // Load products (za duka + stoki) + customers + store
   // ==================================================================
   const loadData = async () => {
     setLoadingData(true)
@@ -52,22 +62,44 @@ export default function MuuzajiPOS() {
     try {
       const storeId = user?.store_id || undefined
 
-      const [prods, custs, stores] = await Promise.all([
+      if (!storeId) {
+        setErrorData(
+          'Hujapangiwa duka. Wasiliana na mmiliki ili akupange kwenye duka.'
+        )
+        setLoadingData(false)
+        return
+      }
+
+      const [prods, custs, stores, stocks] = await Promise.all([
         productsApi.list(storeId),
         customersApi.list(),
         storesApi.list(),
+        inventoryApi.stockLevels({ store: storeId }),
       ])
 
-      setProducts(prods.filter((p) => p.is_active))
+      // ✅ Unganisha bidhaa na stoki yake kwenye duka
+      const stockMap = new Map<string, number>()
+      stocks.forEach((s: StockLevel) => {
+        stockMap.set(s.product, parseFloat(s.quantity))
+      })
+
+      const productsWithStock: ProductWithStock[] = prods
+        .filter((p) => p.is_active)
+        .map((p) => {
+          const stock = stockMap.get(p.id) || 0
+          return {
+            ...p,
+            stock_quantity: stock,
+            has_stock: stock > 0,
+          }
+        })
+
+      setProducts(productsWithStock)
       setCustomers(custs)
 
-      // ✅ Pata duka la muuzaji
-      if (user?.store_id) {
-        const myStore = stores.find((s) => s.id === user.store_id) || null
-        setStore(myStore)
-      } else {
-        setStore(null)
-      }
+      // Pata duka la muuzaji
+      const myStore = stores.find((s) => s.id === user.store_id) || null
+      setStore(myStore)
 
       if (custs.length > 0 && !mtejaId) setMtejaId(custs[0].id)
     } catch (err: any) {
@@ -86,31 +118,77 @@ export default function MuuzajiPOS() {
   }, [user?.store_id])
 
   // ==================================================================
-  // Filter
+  // Filter — onyesha tu bidhaa zenye stoki
   // ==================================================================
   const filtered = useMemo(() => {
     const query = q.toLowerCase().trim()
-    if (!query) return products
-    return products.filter(
-      (b) =>
+    return products.filter((b) => {
+      if (!b.has_stock) return false
+      if (!query) return true
+      return (
         b.name.toLowerCase().includes(query) ||
         b.sku.toLowerCase().includes(query)
-    )
+      )
+    })
   }, [products, q])
+
+  // Bidhaa zote (kwa stats)
+  const stockStats = useMemo(() => {
+    const total = products.length
+    const zenye = products.filter((p) => p.has_stock).length
+    const zisizo = total - zenye
+    return { total, zenye, zisizo }
+  }, [products])
 
   // ==================================================================
   // Cart helpers
   // ==================================================================
-  const add = (id: string) =>
+  const add = (id: string) => {
+    const p = products.find((x) => x.id === id)
+    if (!p) return
+    if (!p.has_stock) {
+      setToast({ msg: 'Bidhaa hii haina stoki.', ok: false })
+      setTimeout(() => setToast(null), 3000)
+      return
+    }
     setCart((c) => {
       const ex = c.find((x) => x.id === id)
-      return ex
-        ? c.map((x) => (x.id === id ? { ...x, wingi: x.wingi + 1 } : x))
-        : [...c, { id, wingi: 1 }]
+      if (ex) {
+        // ✅ Angalia kama unaongeza zaidi ya stoki
+        if (ex.wingi + 1 > p.stock_quantity) {
+          setToast({
+            msg: `Stoki iliyobaki ni ${p.stock_quantity} tu.`,
+            ok: false,
+          })
+          setTimeout(() => setToast(null), 3000)
+          return c
+        }
+        return c.map((x) =>
+          x.id === id ? { ...x, wingi: x.wingi + 1 } : x
+        )
+      }
+      return [...c, { id, wingi: 1 }]
     })
+  }
 
-  const inc = (id: string) =>
-    setCart((c) => c.map((x) => (x.id === id ? { ...x, wingi: x.wingi + 1 } : x)))
+  const inc = (id: string) => {
+    const p = products.find((x) => x.id === id)
+    if (!p) return
+    setCart((c) =>
+      c.map((x) => {
+        if (x.id !== id) return x
+        if (x.wingi + 1 > p.stock_quantity) {
+          setToast({
+            msg: `Stoki iliyobaki ni ${p.stock_quantity} tu.`,
+            ok: false,
+          })
+          setTimeout(() => setToast(null), 3000)
+          return x
+        }
+        return { ...x, wingi: x.wingi + 1 }
+      })
+    )
+  }
 
   const dec = (id: string) =>
     setCart((c) =>
@@ -139,6 +217,7 @@ export default function MuuzajiPOS() {
           bei: price,
           wingi: c.wingi,
           jumla: price * c.wingi,
+          stoki: b.stock_quantity,
           product: b,
         }
       })
@@ -185,7 +264,6 @@ export default function MuuzajiPOS() {
     setSaving(true)
 
     try {
-      // 1. Unda order
       const order = await ordersApi.create({
         customer_id: mtejaId,
         store_id: user.store_id,
@@ -201,7 +279,6 @@ export default function MuuzajiPOS() {
         })),
       })
 
-      // 2. Ongeza malipo
       if (njiaMalipo === 'cash') {
         const payment = await ordersApi.addPayment(order.id, {
           method: 'cash',
@@ -230,10 +307,10 @@ export default function MuuzajiPOS() {
         })
       }
 
-      // 3. Reset
       setCart([])
       setKumbukumbu('')
       setPayOpen(false)
+      await loadData() // ✅ Pata stoki mpya
       setTimeout(() => setToast(null), 5000)
     } catch (err: any) {
       setToast({
@@ -289,6 +366,30 @@ export default function MuuzajiPOS() {
           </button>
         </div>
 
+        {/* Stats */}
+        {!loadingData && (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white rounded-2xl border border-slate-200 p-3">
+              <div className="text-xs text-slate-500">Bidhaa Zote</div>
+              <div className="text-lg font-bold text-slate-900 mt-0.5">
+                {stockStats.total}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 p-3">
+              <div className="text-xs text-slate-500">Zenye Stoki</div>
+              <div className="text-lg font-bold text-emerald-700 mt-0.5">
+                {stockStats.zenye}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 p-3">
+              <div className="text-xs text-slate-500">Hazina Stoki</div>
+              <div className="text-lg font-bold text-red-600 mt-0.5">
+                {stockStats.zisizo}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Search */}
         <div className="relative">
           <Search
@@ -327,12 +428,18 @@ export default function MuuzajiPOS() {
             <div className="col-span-full bg-white rounded-2xl border border-slate-200 p-12 text-center">
               <Package size={40} className="mx-auto text-slate-300 mb-3" />
               <h3 className="font-semibold">
-                {q ? 'Hakuna bidhaa inayolingana' : 'Hakuna bidhaa bado'}
+                {q
+                  ? 'Hakuna bidhaa inayolingana'
+                  : stockStats.total === 0
+                  ? 'Hakuna bidhaa kwenye duka lako'
+                  : 'Hakuna bidhaa zenye stoki'}
               </h3>
               <p className="text-sm text-slate-500 mt-1">
                 {q
                   ? 'Badilisha neno la utafutaji.'
-                  : 'Bidhaa zitaonekana hapa mara mmiliki aziongeze.'}
+                  : stockStats.total === 0
+                  ? 'Mmiliki anahitaji kuongeza bidhaa kwenye duka lako.'
+                  : 'Bidhaa zote zimeisha stoki. Wasiliana na mmiliki.'}
               </p>
             </div>
           ) : (
@@ -365,8 +472,19 @@ export default function MuuzajiPOS() {
                   <div className="text-brand-700 font-bold mt-2 text-lg">
                     {formatTsh(b.selling_price)}
                   </div>
-                  <div className="text-xs text-slate-500">
-                    {b.unit_name || 'pcs'}
+                  <div className="flex justify-between items-center text-xs mt-1">
+                    <span className="text-slate-500">
+                      {b.unit_name || 'pcs'}
+                    </span>
+                    <span
+                      className={`font-semibold ${
+                        b.stock_quantity <= (b.low_stock_alert || 5)
+                          ? 'text-amber-600'
+                          : 'text-emerald-600'
+                      }`}
+                    >
+                      Stoki: {b.stock_quantity}
+                    </span>
                   </div>
                 </button>
               )
@@ -443,6 +561,9 @@ export default function MuuzajiPOS() {
                     </div>
                     <div className="text-xs text-slate-500">
                       {formatTsh(l.bei)} / {l.uom || 'pcs'}
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      Stoki: {l.stoki}
                     </div>
                   </div>
                   <div className="text-sm font-semibold whitespace-nowrap">

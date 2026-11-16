@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Receipt, Search, CheckCircle2, Clock, RefreshCw,
   AlertTriangle, X, Phone, Package, CreditCard, Loader2,
+  Store, User, Lock, MapPin,
 } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 import { ordersApi } from '../../services/orders'
+import { storesApi, type Store as StoreType } from '../../services/stores'
 import { formatTsh, formatDate } from '../../lib/format'
 import { SkeletonLine } from '../../components/Skeleton'
 
@@ -37,13 +40,16 @@ interface Order {
   id: string
   customer: string
   customer_name: string
+  customer_phone?: string
   store: string
+  store_name?: string
   order_date: string
   status: 'inasubiri_malipo' | 'imekamilika' | 'imekataliwa'
   subtotal: string
   discount: string
   total: string
   created_by: string
+  created_by_name?: string
   items: OrderItem[]
   payments: Payment[]
 }
@@ -61,21 +67,54 @@ const METHOD_LABEL: Record<string, string> = {
 // Page
 // ==================================================================
 export default function MuuzajiRisiti() {
+  const { user } = useAuth()
+
+  // ================================================================
+  // ✅ DUKA HUSIKA + MTU HUSIKA
+  // ================================================================
+  const storeId = user?.store_id || undefined
+  const userId = user?.id || undefined
+
   const [orders, setOrders] = useState<Order[]>([])
+  const [store, setStore] = useState<StoreType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [q, setQ] = useState('')
   const [selected, setSelected] = useState<Order | null>(null)
 
   // ------------------------------------------------------------------
-  // Load
+  // Load — ✅ inachuja kwa duka husika
   // ------------------------------------------------------------------
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
+
+    // ✅ Hakikisha mtumiaji ana duka
+    if (!storeId) {
+      setError('Hujapangiwa duka. Wasiliana na mmiliki.')
+      setLoading(false)
+      return
+    }
+
+    // ✅ Role guard
+    if (
+      user.role !== 'muuzaji' &&
+      user.role !== 'mmiliki' &&
+      user.role !== 'admin' &&
+      user.role !== 'mhazini'
+    ) {
+      setError('Huna ruhusa ya kuona risiti.')
+      setLoading(false)
+      return
+    }
+
     try {
-      const data = (await ordersApi.list()) as Order[]
-      setOrders(data)
+      const [ords, myStore] = await Promise.all([
+        ordersApi.list({ store: storeId }),          // ✅ RISITI ZA DUKA HUSIKA
+        storesApi.get(storeId),                       // ✅ duka moja
+      ])
+      setOrders(ords as Order[])
+      setStore(myStore)
     } catch (err: any) {
       setError(
         err?.response?.data?.detail ||
@@ -84,34 +123,45 @@ export default function MuuzajiRisiti() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [storeId, user?.role])
 
   useEffect(() => {
     load()
-  }, [])
+  }, [load])
+
+  // ------------------------------------------------------------------
+  // ✅ Defense in depth: chuja tena
+  // ------------------------------------------------------------------
+  const myOrders = useMemo(() => {
+    if (!storeId) return []
+    return orders.filter((o) => !o.store || o.store === storeId)
+  }, [orders, storeId])
 
   // ------------------------------------------------------------------
   // Filter
   // ------------------------------------------------------------------
   const filtered = useMemo(() => {
     const query = q.toLowerCase().trim()
-    if (!query) return orders
-    return orders.filter(
+    if (!query) return myOrders
+    return myOrders.filter(
       (o) =>
         o.id.toLowerCase().includes(query) ||
         (o.customer_name || '').toLowerCase().includes(query) ||
-        o.customer.toLowerCase().includes(query)
+        (o.customer_phone || '').includes(query)
     )
-  }, [orders, q])
+  }, [myOrders, q])
 
   // ------------------------------------------------------------------
-  // Stats
+  // Stats — kwa myOrders pekee
   // ------------------------------------------------------------------
   const stats = useMemo(() => {
-    const zote = orders.length
-    const jumla = orders.reduce((s, o) => s + parseFloat(o.total || '0'), 0)
+    const zote = myOrders.length
+    const jumla = myOrders.reduce(
+      (s, o) => s + parseFloat(o.total || '0'),
+      0
+    )
 
-    const cash = orders
+    const cash = myOrders
       .filter((o) =>
         o.payments.some(
           (p) => p.method === 'cash' && p.status === 'imethibitishwa'
@@ -119,7 +169,7 @@ export default function MuuzajiRisiti() {
       )
       .reduce((s, o) => s + parseFloat(o.total || '0'), 0)
 
-    const deni = orders.reduce((s, o) => {
+    const deni = myOrders.reduce((s, o) => {
       const confirmed = o.payments
         .filter((p) => p.status === 'imethibitishwa')
         .reduce((a, p) => a + parseFloat(p.amount || '0'), 0)
@@ -127,7 +177,7 @@ export default function MuuzajiRisiti() {
     }, 0)
 
     return { zote, jumla, cash, deni }
-  }, [orders])
+  }, [myOrders])
 
   // ------------------------------------------------------------------
   // Render
@@ -139,10 +189,35 @@ export default function MuuzajiRisiti() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
             <Receipt size={26} className="text-brand-600" /> Risiti
+            <span
+              className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded"
+              title="Risiti za duka lako pekee"
+            >
+              <Lock size={10} /> Duka Lako
+            </span>
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Risiti zote za mauzo — cash, malipo, na madeni
-          </p>
+          <div className="text-sm text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1">
+              <User size={12} /> {user?.full_name || 'Muuzaji'}
+            </span>
+            <span className="text-slate-300">|</span>
+            {loading ? (
+              <SkeletonLine className="h-4 w-32" />
+            ) : store ? (
+              <span className="inline-flex items-center gap-1 text-brand-700 font-medium">
+                <Store size={14} />
+                {store.name}
+                <span className="text-slate-400 font-normal">
+                  ({store.location})
+                </span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-amber-600">
+                <AlertTriangle size={14} />
+                Hujapangiwa duka
+              </span>
+            )}
+          </div>
         </div>
         <button
           onClick={load}
@@ -154,7 +229,7 @@ export default function MuuzajiRisiti() {
         </button>
       </div>
 
-      {/* Stats — skeleton wakati loading */}
+      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => <StatSkeleton key={i} />)
@@ -207,16 +282,13 @@ export default function MuuzajiRisiti() {
         <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <div className="flex-1">{error}</div>
-          <button
-            onClick={load}
-            className="text-xs font-semibold underline"
-          >
+          <button onClick={load} className="text-xs font-semibold underline">
             Jaribu tena
           </button>
         </div>
       )}
 
-      {/* Loading — skeleton list */}
+      {/* Loading */}
       {loading && (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -230,7 +302,9 @@ export default function MuuzajiRisiti() {
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
           <Receipt size={40} className="mx-auto text-slate-300 mb-3" />
           <h3 className="font-semibold">
-            {q ? 'Hakuna matokeo ya utafutaji' : 'Hakuna risiti bado'}
+            {q
+              ? 'Hakuna matokeo ya utafutaji'
+              : 'Hakuna risiti bado kwenye duka lako'}
           </h3>
           <p className="text-sm text-slate-500 mt-1">
             {q
@@ -273,10 +347,20 @@ export default function MuuzajiRisiti() {
                         #{o.id.slice(0, 8).toUpperCase()}
                       </div>
                       <div className="text-xs text-slate-500 truncate">
-                        {o.customer_name || 'Mteja'} — {o.customer}
+                        {o.customer_name || 'Mteja'}
+                        {o.customer_phone && ` — ${o.customer_phone}`}
                       </div>
-                      <div className="text-xs text-slate-500">
-                        {formatDate(o.order_date)}
+                      <div className="text-xs text-slate-500 flex items-center gap-1.5 flex-wrap">
+                        <span>{formatDate(o.order_date)}</span>
+                        {o.store_name && (
+                          <>
+                            <span className="text-slate-300">|</span>
+                            <span className="inline-flex items-center gap-1">
+                              <Store size={10} />
+                              {o.store_name}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -303,7 +387,11 @@ export default function MuuzajiRisiti() {
 
       {/* Modal */}
       {selected && (
-        <RisitiDetailModal order={selected} onClose={() => setSelected(null)} />
+        <RisitiDetailModal
+          order={selected}
+          storeId={storeId}
+          onClose={() => setSelected(null)}
+        />
       )}
     </div>
   )
@@ -339,7 +427,7 @@ function Stat({
 }
 
 // ==================================================================
-// Skeleton — Stat
+// Skeletons
 // ==================================================================
 function StatSkeleton() {
   return (
@@ -351,9 +439,6 @@ function StatSkeleton() {
   )
 }
 
-// ==================================================================
-// Skeleton — Risiti
-// ==================================================================
 function RisitiSkeleton() {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4">
@@ -376,19 +461,45 @@ function RisitiSkeleton() {
 }
 
 // ==================================================================
-// Modal — Risiti Detail
+// Modal — Risiti Detail — ✅ inapokea storeId
 // ==================================================================
 function RisitiDetailModal({
   order,
+  storeId,
   onClose,
 }: {
   order: Order
+  storeId?: string
   onClose: () => void
 }) {
   const confirmed = order.payments
     .filter((p) => p.status === 'imethibitishwa')
     .reduce((s, p) => s + parseFloat(p.amount || '0'), 0)
   const baki = parseFloat(order.total || '0') - confirmed
+
+  // ✅ Ulinzi: risiti lazima iwe ya duka hili
+  const isOwned = !order.store || order.store === storeId
+
+  if (!isOwned) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+        <div className="relative bg-white w-full max-w-sm rounded-2xl p-6 text-center shadow-2xl">
+          <AlertTriangle size={40} className="mx-auto text-red-500 mb-3" />
+          <h3 className="font-semibold">Risiti Si ya Duka Lako</h3>
+          <p className="text-sm text-slate-500 mt-1">
+            Huna ruhusa ya kuona risiti hii.
+          </p>
+          <button
+            onClick={onClose}
+            className="mt-4 px-4 py-2.5 rounded-lg bg-slate-100 text-sm hover:bg-slate-200"
+          >
+            Funga
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -417,10 +528,24 @@ function RisitiDetailModal({
           <div className="p-3 rounded-lg bg-slate-50">
             <div className="text-xs text-slate-500 mb-1">Mteja</div>
             <div className="font-medium">{order.customer_name || '—'}</div>
-            <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-              <Phone size={10} /> {order.customer}
-            </div>
+            {order.customer_phone && (
+              <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                <Phone size={10} /> {order.customer_phone}
+              </div>
+            )}
           </div>
+
+          {/* Duka */}
+          {order.store_name && (
+            <div className="flex items-center gap-1.5 text-xs text-slate-600">
+              <Store size={12} /> {order.store_name}
+            </div>
+          )}
+          {order.created_by_name && (
+            <div className="flex items-center gap-1.5 text-xs text-slate-600">
+              <User size={12} /> {order.created_by_name}
+            </div>
+          )}
 
           {/* Bidhaa */}
           <div>

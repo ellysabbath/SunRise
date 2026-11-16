@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   BarChart3, TrendingUp, Package, Users, Wallet,
   AlertTriangle, CheckCircle2, Download,
   FileText, Search, Trash2, X, Eye, Plus,
   Clock, RefreshCw, Loader2, ArrowDownToLine,
   Table as TableIcon, File, Sheet, HelpCircle,
+  Store, User, Lock,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -15,6 +16,7 @@ import { ordersApi } from '../../services/orders'
 import { productsApi, type Product } from '../../services/products'
 import { customersApi, type Customer } from '../../services/customers'
 import { inventoryApi, type StockLevel } from '../../services/inventory'
+import { storesApi, type Store as StoreType } from '../../services/stores'
 import {
   documentsApi,
   type DocumentMeta,
@@ -45,6 +47,7 @@ interface Order {
   customer: string
   customer_name: string
   store: string
+  store_name?: string
   order_date: string
   status: 'inasubiri_malipo' | 'imekamilika' | 'imekataliwa'
   total: string
@@ -233,30 +236,55 @@ export default function MuuzajiRipoti() {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('mauzo')
 
+  // ================================================================
+  // ✅ DUKA HUSIKA + MTU HUSIKA
+  // ================================================================
+  const storeId = user?.store_id || undefined
+  const userId = user?.id || undefined
+
   const [orders, setOrders] = useState<Order[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [stockLevels, setStockLevels] = useState<StockLevel[]>([])
   const [documents, setDocuments] = useState<DocumentMeta[]>([])
+  const [store, setStore] = useState<StoreType | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const storeId = user?.store_id || undefined
-
   // ------------------------------------------------------------------
-  // Load
+  // Load — ✅ inachuja kwa duka husika
   // ------------------------------------------------------------------
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
+
+    // ✅ Hakikisha mtumiaji ana duka
+    if (!storeId) {
+      setError('Hujapangiwa duka. Wasiliana na mmiliki.')
+      setLoading(false)
+      return
+    }
+
+    // ✅ Role guard
+    if (
+      user.role !== 'muuzaji' &&
+      user.role !== 'mmiliki' &&
+      user.role !== 'admin'
+    ) {
+      setError('Huna ruhusa ya kuona ripoti za duka.')
+      setLoading(false)
+      return
+    }
+
     try {
       const results = await Promise.allSettled([
-        ordersApi.list(),
-        productsApi.list(storeId),
-        customersApi.list(),
-        inventoryApi.stockLevels({ store: storeId }),
-        documentsApi.list(storeId ? { store: storeId } : undefined),
+        ordersApi.list({ store: storeId }),                        // ✅ orders za duka
+        productsApi.list(storeId),                                  // ✅ bidhaa za duka
+        customersApi.list({ store: storeId }),                      // ✅ wateja wa duka
+        inventoryApi.stockLevels({ store: storeId }),               // ✅ stoki ya duka
+        documentsApi.list({ store: storeId }),                      // ✅ documents za duka
+        storesApi.get(storeId),                                     // ✅ duka moja
       ])
 
       setOrders(
@@ -276,6 +304,9 @@ export default function MuuzajiRipoti() {
       setDocuments(
         results[4].status === 'fulfilled' ? results[4].value : []
       )
+      setStore(
+        results[5].status === 'fulfilled' ? results[5].value : null
+      )
 
       if (results[0].status === 'rejected') {
         const reason: any = results[0].reason
@@ -292,12 +323,29 @@ export default function MuuzajiRipoti() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [storeId, user?.role])
 
   useEffect(() => {
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeId])
+  }, [load])
+
+  // ------------------------------------------------------------------
+  // ✅ Defense in depth: chuja tena kwa usalama
+  // ------------------------------------------------------------------
+  const myOrders = useMemo(() => {
+    if (!storeId) return []
+    return orders.filter((o) => !o.store || o.store === storeId)
+  }, [orders, storeId])
+
+  const myCustomers = useMemo(() => {
+    // customersApi.list({ store }) tayari imechuja — hii ni ulinzi wa ziada
+    return customers
+  }, [customers])
+
+  const myDocuments = useMemo(() => {
+    if (!storeId) return []
+    return documents.filter((d) => !d.store_id || d.store_id === storeId)
+  }, [documents, storeId])
 
   return (
     <div className="space-y-5">
@@ -306,10 +354,35 @@ export default function MuuzajiRipoti() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
             <BarChart3 size={26} className="text-brand-600" /> Ripoti za Duka
+            <span
+              className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded"
+              title="Ripoti za duka lako pekee"
+            >
+              <Lock size={10} /> Duka Lako
+            </span>
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {user?.full_name || 'Muuzaji'} — takwimu za mauzo, stoki, wateja
-          </p>
+          <div className="text-sm text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1">
+              <User size={12} /> {user?.full_name || 'Muuzaji'}
+            </span>
+            <span className="text-slate-300">|</span>
+            {loading ? (
+              <SkeletonLine className="h-4 w-32" />
+            ) : store ? (
+              <span className="inline-flex items-center gap-1 text-brand-700 font-medium">
+                <Store size={14} />
+                {store.name}
+                <span className="text-slate-400 font-normal">
+                  ({store.location})
+                </span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-amber-600">
+                <AlertTriangle size={14} />
+                Hujapangiwa duka
+              </span>
+            )}
+          </div>
         </div>
         <button
           onClick={load}
@@ -335,13 +408,13 @@ export default function MuuzajiRipoti() {
           >
             <t.Icon size={14} />
             {t.label}
-            {t.key === 'documents' && documents.length > 0 && (
+            {t.key === 'documents' && myDocuments.length > 0 && (
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded ${
                   tab === t.key ? 'bg-white/20' : 'bg-slate-100'
                 }`}
               >
-                {documents.length}
+                {myDocuments.length}
               </span>
             )}
           </button>
@@ -361,7 +434,7 @@ export default function MuuzajiRipoti() {
 
       {/* Content */}
       {tab === 'mauzo' && (
-        <RipotiMauzoTab orders={orders} loading={loading} />
+        <RipotiMauzoTab orders={myOrders} loading={loading} />
       )}
       {tab === 'stoki' && (
         <RipotiStokiTab
@@ -372,15 +445,16 @@ export default function MuuzajiRipoti() {
       )}
       {tab === 'wateja' && (
         <RipotiWatejaTab
-          customers={customers}
-          orders={orders}
+          customers={myCustomers}
+          orders={myOrders}
           loading={loading}
         />
       )}
       {tab === 'documents' && (
         <DocumentsTab
           storeId={storeId}
-          documents={documents}
+          userId={userId}
+          documents={myDocuments}
           setDocuments={setDocuments}
           loading={loading}
         />
@@ -390,7 +464,7 @@ export default function MuuzajiRipoti() {
 }
 
 // ==================================================================
-// Ripoti ya Mauzo
+// Ripoti ya Mauzo (haijabadilika — inapokea `orders` tayari filtered)
 // ==================================================================
 function RipotiMauzoTab({
   orders,
@@ -399,6 +473,7 @@ function RipotiMauzoTab({
   orders: Order[]
   loading: boolean
 }) {
+  // ... (code ile ile — haijabadilika)
   const ripotiKwaTarehe = useMemo(() => {
     const map = new Map<
       string,
@@ -507,7 +582,7 @@ function RipotiMauzoTab({
             </div>
           ) : ripotiKwaTarehe.length === 0 ? (
             <div className="h-full grid place-items-center text-sm text-slate-500">
-              Hakuna mauzo bado
+              Hakuna mauzo bado kwenye duka lako
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
@@ -604,7 +679,7 @@ function RipotiMauzoTab({
 }
 
 // ==================================================================
-// Ripoti ya Stoki
+// Ripoti ya Stoki (haijabadilika — inapokea data tayari filtered)
 // ==================================================================
 function RipotiStokiTab({
   products,
@@ -615,6 +690,7 @@ function RipotiStokiTab({
   stockLevels: StockLevel[]
   loading: boolean
 }) {
+  // ... (code ile ile — haijabadilika)
   const ripotiStoki = useMemo(() => {
     return products.map((b) => {
       const level = stockLevels.find((s) => s.product === b.id)
@@ -697,7 +773,7 @@ function RipotiStokiTab({
                       colSpan={4}
                       className="p-8 text-center text-sm text-slate-500"
                     >
-                      Hakuna bidhaa bado
+                      Hakuna bidhaa bado kwenye duka lako
                     </td>
                   </tr>
                 ) : (
@@ -753,7 +829,7 @@ function RipotiStokiTab({
 }
 
 // ==================================================================
-// Ripoti ya Wateja
+// Ripoti ya Wateja (inapokea customers tayari filtered)
 // ==================================================================
 function RipotiWatejaTab({
   customers,
@@ -853,7 +929,7 @@ function RipotiWatejaTab({
                       colSpan={4}
                       className="p-8 text-center text-sm text-slate-500"
                     >
-                      Hakuna wateja bado
+                      Hakuna wateja bado kwenye duka lako
                     </td>
                   </tr>
                 ) : (
@@ -889,15 +965,17 @@ function RipotiWatejaTab({
 }
 
 // ==================================================================
-// Documents Tab
+// Documents Tab — ✅ inachuja kwa duka + mtu
 // ==================================================================
 function DocumentsTab({
   storeId,
+  userId,
   documents,
   setDocuments,
   loading,
 }: {
   storeId?: string
+  userId?: string
   documents: DocumentMeta[]
   setDocuments: React.Dispatch<React.SetStateAction<DocumentMeta[]>>
   loading: boolean
@@ -937,11 +1015,10 @@ function DocumentsTab({
   )
 
   const refresh = async () => {
+    if (!storeId) return
     setLocalLoading(true)
     try {
-      const docs = await documentsApi.list(
-        storeId ? { store: storeId } : undefined
-      )
+      const docs = await documentsApi.list({ store: storeId })
       setDocuments(docs)
     } catch (err: any) {
       setToast({
@@ -954,12 +1031,16 @@ function DocumentsTab({
   }
 
   const handleZalisha = async (aina: AinaDocument) => {
+    if (!storeId) {
+      setToast({ msg: 'Hujapangiwa duka.', ok: false })
+      return
+    }
     setGenerating(aina)
     try {
       const doc = await documentsApi.generate({
         aina,
         format: 'pdf',
-        store_id: storeId,
+        store_id: storeId,    // ✅ duka husika
       })
       setDocuments((prev) => [doc, ...prev])
       setZalisha(false)
@@ -979,7 +1060,15 @@ function DocumentsTab({
   }
 
   const handleFuta = async () => {
-    if (!confirmDelete) return
+    if (!confirmDelete || !storeId) return
+
+    // ✅ Ulinzi: document lazima iwe ya duka hili
+    if (confirmDelete.store_id && confirmDelete.store_id !== storeId) {
+      setToast({ msg: 'Document si ya duka lako.', ok: false })
+      setConfirmDelete(null)
+      return
+    }
+
     setDeleting(true)
     try {
       await documentsApi.remove(confirmDelete.id)
@@ -1022,14 +1111,14 @@ function DocumentsTab({
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={() => setZalisha(true)}
-          disabled={loading}
+          disabled={loading || !storeId}
           className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
         >
           <Plus size={16} /> Zalisha Ripoti
         </button>
         <button
           onClick={refresh}
-          disabled={localLoading}
+          disabled={localLoading || !storeId}
           className="inline-flex items-center gap-1.5 px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
         >
           <RefreshCw
@@ -1107,7 +1196,7 @@ function DocumentsTab({
           <h3 className="font-semibold">
             {q || filterAina !== 'zote'
               ? 'Hakuna matokeo'
-              : 'Hakuna documents'}
+              : 'Hakuna documents kwenye duka lako'}
           </h3>
           <p className="text-sm text-slate-500 mt-1">
             {q || filterAina !== 'zote'
@@ -1195,6 +1284,8 @@ function DocumentsTab({
       {selected && (
         <DocumentDetailModal
           doc={selected}
+          storeId={storeId}
+          userId={userId}
           onClose={() => setSelected(null)}
         />
       )}
@@ -1210,7 +1301,7 @@ function DocumentsTab({
               <div>
                 <div className="font-semibold">Zalisha Ripoti Mpya</div>
                 <div className="text-xs text-slate-500">
-                  Data itahesabiwa kutoka backend
+                  Data itahesabiwa kutoka duka lako
                 </div>
               </div>
               <button
@@ -1281,13 +1372,17 @@ function DocumentsTab({
 }
 
 // ==================================================================
-// Document Detail Modal — prop ni `doc` (sio `document`)
+// Document Detail Modal — ✅ inathibitisha ownership
 // ==================================================================
 function DocumentDetailModal({
   doc,
+  storeId,
+  userId,
   onClose,
 }: {
   doc: DocumentMeta
+  storeId?: string
+  userId?: string
   onClose: () => void
 }) {
   const [downloading, setDownloading] = useState(false)
@@ -1299,7 +1394,16 @@ function DocumentDetailModal({
   const hali = HALI_DOC_META[doc.hali]
   const data = doc.data_snapshot || {}
 
+  // ✅ Ulinzi: document lazima iwe ya duka hili
+  const isOwned = !doc.store_id || doc.store_id === storeId
+
   const handleDownload = async () => {
+    // ✅ Ulinzi: usiruhusu kupakua document ya duka lingine
+    if (!isOwned) {
+      setToast({ msg: 'Document si ya duka lako.', ok: false })
+      return
+    }
+
     setDownloading(true)
     setDownloadError('')
     try {
@@ -1546,7 +1650,7 @@ function DocumentDetailModal({
 
           {doc.store_name && (
             <div className="flex items-center gap-1.5 text-xs text-slate-600">
-              <FileText size={12} /> {doc.store_name}
+              <Store size={12} /> {doc.store_name}
             </div>
           )}
           {doc.aliyezalisha_name && (
@@ -1572,7 +1676,7 @@ function DocumentDetailModal({
           <div className="flex gap-2 pt-2 border-t border-slate-200">
             <button
               onClick={handleDownload}
-              disabled={downloading || doc.hali !== 'tayari'}
+              disabled={downloading || doc.hali !== 'tayari' || !isOwned}
               className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
             >
               {downloading ? (

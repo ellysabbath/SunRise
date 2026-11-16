@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Truck, CheckCircle2, AlertTriangle, RefreshCw, Package,
-  X, Loader2, Store, Eye,
+  X, Loader2, Store, Eye, User, Lock, ClipboardList,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import {
@@ -28,12 +28,16 @@ interface PokeaGroup {
   status: PokeaStatus
   aliyepokea: string | null
   tareheKupokea: string | null
+  // ✅ Assignment ya mmiliki
+  assigned_to?: string | null
+  assigned_to_name?: string | null
 }
 
 // ==================================================================
 // Constants
 // ==================================================================
 const RECEIVED_PREFIX = 'RECEIVED_BY|'
+const ASSIGNED_PREFIX = 'ASSIGNED_TO|'
 
 // ==================================================================
 // Helpers
@@ -55,6 +59,19 @@ function parseReceivedNote(
     userId: parts[1],
     userName: parts[2],
     timestamp: parts[3],
+  }
+}
+
+// ✅ Parse assignment ya mmiliki
+function parseAssignedNote(
+  note: string
+): { userId: string; userName: string } | null {
+  if (!note || !note.startsWith(ASSIGNED_PREFIX)) return null
+  const parts = note.split('|')
+  if (parts.length < 3) return null
+  return {
+    userId: parts[1],
+    userName: parts[2],
   }
 }
 
@@ -146,16 +163,22 @@ function PokeaSkeleton() {
 // ==================================================================
 function PokeaModal({
   group,
+  storeId,
+  userId,
   onClose,
   onConfirm,
   processing,
 }: {
   group: PokeaGroup
+  storeId?: string
+  userId?: string
   onClose: () => void
   onConfirm: () => void
   processing: boolean
 }) {
   const isReceived = group.status === 'imepokelewa'
+  // ✅ Ulinzi: mzigo lazima uwe umepewa mtumiaji huyu
+  const isAssignedToMe = !group.assigned_to || group.assigned_to === userId
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -179,6 +202,12 @@ function PokeaModal({
                   Inasubiri
                 </span>
               )}
+              {!isAssignedToMe && (
+                <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">
+                  <AlertTriangle size={9} />
+                  Si Yako
+                </span>
+              )}
             </div>
             <div className="text-xs text-slate-500">
               {formatDate(group.tarehe)}
@@ -194,6 +223,21 @@ function PokeaModal({
         </div>
 
         <div className="p-4 space-y-4">
+          {/* Assignment banner */}
+          {group.assigned_to_name && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm">
+              <ClipboardList size={16} className="mt-0.5 shrink-0" />
+              <div>
+                <div className="font-medium">
+                  Mmepewa: {group.assigned_to_name}
+                </div>
+                <div className="text-xs text-blue-600 mt-0.5">
+                  Mmiliki amekupa mzigo huu kwa ajili ya kupokea
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Received banner */}
           {isReceived && group.aliyepokea && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
@@ -280,10 +324,18 @@ function PokeaModal({
                 <CheckCircle2 size={16} />
                 Imepokelewa
               </button>
+            ) : !isAssignedToMe ? (
+              <button
+                disabled
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-50 text-red-700 text-sm font-semibold border border-red-200 cursor-not-allowed"
+              >
+                <AlertTriangle size={16} />
+                Si Mzigo Wako
+              </button>
             ) : (
               <button
                 onClick={onConfirm}
-                disabled={processing}
+                disabled={processing || !storeId}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
               >
                 {processing ? (
@@ -312,6 +364,12 @@ function PokeaModal({
 export default function MuuzajiPokeaBidhaa() {
   const { user } = useAuth()
 
+  // ================================================================
+  // ✅ DUKA HUSIKA + MTU HUSIKA
+  // ================================================================
+  const storeId = user?.store_id || undefined
+  const userId = user?.id || undefined
+
   const [movements, setMovements] = useState<StockMovement[]>([])
   const [store, setStore] = useState<StoreType | null>(null)
   const [loading, setLoading] = useState(true)
@@ -321,34 +379,46 @@ export default function MuuzajiPokeaBidhaa() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
   // ------------------------------------------------------------------
-  // Load — movements za manunuzi + marekebisho
+  // Load — ✅ inachuja kwa duka husika
   // ------------------------------------------------------------------
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
-    try {
-      const storeId = user?.store_id || undefined
 
-      const [movsManunuzi, movsMarekebisho, stores] = await Promise.all([
+    // ✅ Hakikisha mtumiaji ana duka
+    if (!storeId) {
+      setError('Hujapangiwa duka. Wasiliana na mmiliki.')
+      setLoading(false)
+      return
+    }
+
+    // ✅ Role guard
+    if (
+      user.role !== 'muuzaji' &&
+      user.role !== 'mmiliki' &&
+      user.role !== 'admin' &&
+      user.role !== 'mhazini'
+    ) {
+      setError('Huna ruhusa ya kuona mizigo.')
+      setLoading(false)
+      return
+    }
+
+    try {
+      const [movsManunuzi, movsMarekebisho, myStore] = await Promise.all([
         inventoryApi.movements({
           movement_type: 'manunuzi',
-          store: storeId,
+          store: storeId,                                 // ✅ duka husika
         }),
         inventoryApi.movements({
           movement_type: 'marekebisho',
-          store: storeId,
+          store: storeId,                                 // ✅ duka husika
         }),
-        storesApi.list(),
+        storesApi.get(storeId),                           // ✅ duka moja (sio list)
       ])
 
       setMovements([...movsManunuzi, ...movsMarekebisho])
-
-      if (user?.store_id) {
-        const myStore = stores.find((s) => s.id === user.store_id) || null
-        setStore(myStore)
-      } else {
-        setStore(null)
-      }
+      setStore(myStore)
     } catch (err: any) {
       setError(
         err?.response?.data?.detail ||
@@ -357,15 +427,14 @@ export default function MuuzajiPokeaBidhaa() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [storeId, user?.role])
 
   useEffect(() => {
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.store_id])
+  }, [load])
 
   // ------------------------------------------------------------------
-  // Group — pamoja na "RECEIVED" detection
+  // Group — pamoja na "RECEIVED" + "ASSIGNED" detection
   // ------------------------------------------------------------------
   const groups = useMemo<PokeaGroup[]>(() => {
     const map = new Map<string, PokeaGroup>()
@@ -387,6 +456,8 @@ export default function MuuzajiPokeaBidhaa() {
             status: 'inasubiri',
             aliyepokea: null,
             tareheKupokea: null,
+            assigned_to: null,
+            assigned_to_name: null,
           })
         }
         const g = map.get(key)!
@@ -416,6 +487,26 @@ export default function MuuzajiPokeaBidhaa() {
         }
       })
 
+    // 3. ✅ Marekebisho yenye ASSIGNED_TO — mark assigned (mmiliki)
+    movements
+      .filter(
+        (m) =>
+          m.movement_type === 'marekebisho' &&
+          m.note?.startsWith(ASSIGNED_PREFIX) &&
+          m.reference_id
+      )
+      .forEach((m) => {
+        const key = m.reference_id!
+        const parsed = parseAssignedNote(m.note)
+        if (!parsed) return
+
+        if (map.has(key)) {
+          const g = map.get(key)!
+          g.assigned_to = parsed.userId
+          g.assigned_to_name = parsed.userName
+        }
+      })
+
     return Array.from(map.values()).sort(
       (a, b) =>
         new Date(b.tarehe).getTime() - new Date(a.tarehe).getTime()
@@ -423,28 +514,50 @@ export default function MuuzajiPokeaBidhaa() {
   }, [movements])
 
   // ------------------------------------------------------------------
-  // Stats
+  // ✅ Filter: mizigo ya mtumiaji huyu pekee
+  // ------------------------------------------------------------------
+  const myGroups = useMemo(() => {
+    if (!userId) return []
+    return groups.filter((g) => {
+      // Kama mzigo umeelekezwa kwa mtu fulani, lazima uwe wa mtumiaji huyu
+      if (g.assigned_to && g.assigned_to !== userId) return false
+      return true
+    })
+  }, [groups, userId])
+
+  // ------------------------------------------------------------------
+  // Stats — kwa myGroups pekee
   // ------------------------------------------------------------------
   const stats = useMemo(
     () => ({
-      zote: groups.length,
-      inasubiri: groups.filter((g) => g.status === 'inasubiri').length,
-      imepokelewa: groups.filter((g) => g.status === 'imepokelewa').length,
+      zote: myGroups.length,
+      inasubiri: myGroups.filter((g) => g.status === 'inasubiri').length,
+      imepokelewa: myGroups.filter((g) => g.status === 'imepokelewa').length,
     }),
-    [groups]
+    [myGroups]
   )
 
   // ------------------------------------------------------------------
-  // Pokea
+  // Pokea — ✅ inathibitisha assignment + duka
   // ------------------------------------------------------------------
   const pokea = async (g: PokeaGroup) => {
-    if (!user?.store_id) {
-      setToast({ msg: 'Hujapangiwa duka.', ok: false })
+    // ✅ Hakikisha duka + mtumiaji
+    if (!storeId || !userId) {
+      setToast({ msg: 'Hujapangiwa duka. Wasiliana na mmiliki.', ok: false })
+      setTimeout(() => setToast(null), 3000)
+      return
+    }
+
+    // ✅ Hakikisha mzigo ni wa mtumiaji huyu
+    if (g.assigned_to && g.assigned_to !== userId) {
+      setToast({ msg: 'Mzigo huu si wako. Mmepewa mtu mwingine.', ok: false })
+      setTimeout(() => setToast(null), 4000)
       return
     }
 
     if (g.status === 'imepokelewa') {
       setToast({ msg: 'Mzigo huu tayari umepokelewa.', ok: false })
+      setTimeout(() => setToast(null), 3000)
       return
     }
 
@@ -453,6 +566,7 @@ export default function MuuzajiPokeaBidhaa() {
         msg: `Reference ID si sahihi: ${g.reference_id.slice(0, 8)}`,
         ok: false,
       })
+      setTimeout(() => setToast(null), 3000)
       return
     }
 
@@ -460,10 +574,10 @@ export default function MuuzajiPokeaBidhaa() {
     try {
       await inventoryApi.adjust({
         product_id: g.items[0].product,
-        store_id: user.store_id,
+        store_id: storeId,                               // ✅ duka husika
         quantity: 0,
         movement_type: 'marekebisho',
-        note: `${RECEIVED_PREFIX}${user.id}|${user.full_name}|${new Date().toISOString()}`,
+        note: `${RECEIVED_PREFIX}${userId}|${user.full_name}|${new Date().toISOString()}`,
         reference_id: g.reference_id,
       })
 
@@ -493,9 +607,17 @@ export default function MuuzajiPokeaBidhaa() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
             <Truck size={26} className="text-brand-600" /> Pokea Bidhaa
+            <span
+              className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded"
+              title="Mizigo uliyopewa na mmiliki pekee"
+            >
+              <Lock size={10} /> Yako
+            </span>
           </h1>
           <div className="text-sm text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
-            <span>{user?.full_name || 'Muuzaji'}</span>
+            <span className="inline-flex items-center gap-1">
+              <User size={12} /> {user?.full_name || 'Muuzaji'}
+            </span>
             <span className="text-slate-300">|</span>
             {loading ? (
               <SkeletonLine className="h-4 w-32" />
@@ -526,10 +648,10 @@ export default function MuuzajiPokeaBidhaa() {
       </div>
 
       {/* Stats */}
-      {!loading && groups.length > 0 && (
+      {!loading && myGroups.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
           <StatMini
-            label="Mizigo Yote"
+            label="Mizigo Yako"
             value={String(stats.zote)}
             tone="text-blue-600"
           />
@@ -551,10 +673,7 @@ export default function MuuzajiPokeaBidhaa() {
         <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <div className="flex-1">{error}</div>
-          <button
-            onClick={load}
-            className="text-xs font-semibold underline"
-          >
+          <button onClick={load} className="text-xs font-semibold underline">
             Jaribu tena
           </button>
         </div>
@@ -570,20 +689,20 @@ export default function MuuzajiPokeaBidhaa() {
       )}
 
       {/* Empty */}
-      {!loading && groups.length === 0 && !error && (
+      {!loading && myGroups.length === 0 && !error && (
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
           <Truck size={40} className="mx-auto text-slate-300 mb-3" />
           <h3 className="font-semibold">Hakuna mizigo ya kupokea</h3>
           <p className="text-sm text-slate-500 mt-1">
-            Mizigo itaonekana hapa mara mmiliki atakapotuma bidhaa.
+            Mizigo itaonekana hapa mara mmiliki atakapokupa mzigo wa kupokea.
           </p>
         </div>
       )}
 
       {/* Groups list */}
-      {!loading && groups.length > 0 && (
+      {!loading && myGroups.length > 0 && (
         <div className="space-y-2">
-          {groups.map((g) => {
+          {myGroups.map((g) => {
             const isProcessing = processing === g.reference_id
             const isReceived = g.status === 'imepokelewa'
 
@@ -628,6 +747,12 @@ export default function MuuzajiPokeaBidhaa() {
                             Inasubiri
                           </span>
                         )}
+                        {g.assigned_to_name && (
+                          <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                            <ClipboardList size={9} />
+                            {g.assigned_to_name}
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-slate-500">
                         {formatDate(g.tarehe)} — {g.jumlaBidhaa} bidhaa
@@ -669,7 +794,7 @@ export default function MuuzajiPokeaBidhaa() {
                       ) : (
                         <button
                           onClick={() => pokea(g)}
-                          disabled={isProcessing}
+                          disabled={isProcessing || !storeId}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
                         >
                           {isProcessing ? (
@@ -693,6 +818,8 @@ export default function MuuzajiPokeaBidhaa() {
       {selected && (
         <PokeaModal
           group={selected}
+          storeId={storeId}
+          userId={userId}
           onClose={() => !processing && setSelected(null)}
           onConfirm={() => pokea(selected)}
           processing={processing === selected.reference_id}

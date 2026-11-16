@@ -56,6 +56,9 @@ export default function TopBar({ role, onMenuClick }: TopBarProps) {
   const { user, logout } = useAuth()
   const cart = useCart()
 
+  // ✅ Duka husika la mtumiaji aliyeingia
+  const storeId = user?.store_id || undefined
+
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [results, setResults] = useState<SearchResult[]>([])
@@ -89,8 +92,16 @@ export default function TopBar({ role, onMenuClick }: TopBarProps) {
 
   const unreadCount = notifList.filter((n) => !n.read).length
 
+  // ✅ Scope ya search kulingana na role
+  const searchScope: SearchType[] =
+    role === 'mteja'
+      ? ['bidhaa']
+      : role === 'muuzaji'
+      ? ['bidhaa', 'mteja', 'order']
+      : ['bidhaa', 'mteja', 'order']
+
   // ------------------------------------------------------------------
-  // Search — debounced
+  // Search — debounced, ✅ inachuja kwa duka husika
   // ------------------------------------------------------------------
   useEffect(() => {
     if (!query.trim()) {
@@ -100,29 +111,43 @@ export default function TopBar({ role, onMenuClick }: TopBarProps) {
     const t = setTimeout(async () => {
       setSearchLoading(true)
       try {
-        const r = await searchEverything(query, { limit: 5 })
+        const r = await searchEverything(query, {
+          limit: 5,
+          store: storeId,          // ✅ chuja kwa duka la mtumiaji
+          scope: searchScope,      // ✅ chuja kwa role
+        })
         setResults(r)
+      } catch {
+        setResults([])
       } finally {
         setSearchLoading(false)
       }
     }, 250)
     return () => clearTimeout(t)
-  }, [query])
+  }, [query, storeId, searchScope])
 
   // ------------------------------------------------------------------
-  // Load notifications
+  // Load notifications — ✅ za mtumiaji husika tu
   // ------------------------------------------------------------------
   const loadNotifications = useCallback(async () => {
+    if (!user?.id) {
+      setNotifList([])
+      return
+    }
     setNotifLoading(true)
     try {
-      const data = await notificationsApi.logs({ limit: 20 })
+      const data = await notificationsApi.logs({
+        limit: 20,
+        recipient: user.id,       // ✅ taarifa zake tu
+        store: storeId,           // ✅ au za duka lake (kama API inaunga mkono)
+      })
       setNotifList(data)
     } catch {
       setNotifList([])
     } finally {
       setNotifLoading(false)
     }
-  }, [])
+  }, [user?.id, storeId])
 
   useEffect(() => {
     if (user) loadNotifications()
@@ -224,9 +249,16 @@ export default function TopBar({ role, onMenuClick }: TopBarProps) {
     }
   }
 
+  // ✅ Quotation inahitaji duka — hakikisha lipo
   const goToQuotation = () => {
     setCartOpen(false)
-    navigate('/mteja/quotation')
+    if (!storeId) {
+      // mteja hana store_id — quotation ya kawaida
+      navigate('/mteja/quotation')
+      return
+    }
+    // muuzaji anahitaji duka lake liendelee kwenye quotation
+    navigate(`/mteja/quotation?store=${storeId}`)
   }
 
   const goToBidhaa = () => {
@@ -286,7 +318,11 @@ export default function TopBar({ role, onMenuClick }: TopBarProps) {
                 setSearchOpen(true)
               }}
               onFocus={() => setSearchOpen(true)}
-              placeholder="Tafuta bidhaa, mteja, order..."
+              placeholder={
+                role === 'mteja'
+                  ? 'Tafuta bidhaa...'
+                  : 'Tafuta bidhaa, mteja, order...'
+              }
               className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-slate-100 border border-transparent focus:bg-white focus:border-brand-500 outline-none text-sm"
             />
             {query && (

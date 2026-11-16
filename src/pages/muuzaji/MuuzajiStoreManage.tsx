@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Package, AlertTriangle, Calendar, RotateCcw, PackageX, RefreshCcw,
   Search, CheckCircle2, Clock, XCircle, Store, User,
-  Layers, Truck, Eye, X, ListFilter, RefreshCw, Loader2,
+  Layers, Truck, Eye, X, ListFilter, RefreshCw, Loader2, Lock,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { productsApi, type Product } from '../../services/products'
@@ -10,7 +10,9 @@ import {
   inventoryApi,
   type StockMovement,
   type StockAdjustment,
+  type StockLevel,
 } from '../../services/inventory'
+import { storesApi, type Store as StoreType } from '../../services/stores'
 import { formatTsh, formatDate } from '../../lib/format'
 import { SkeletonLine } from '../../components/Skeleton'
 
@@ -37,13 +39,24 @@ const HALI_ADJ_META: Record<
   imekataliwa: { label: 'Imekataliwa', tone: 'text-red-600', Icon: XCircle },
 }
 
+interface ProductWithStock extends Product {
+  stock_quantity: number
+}
+
 // ==================================================================
 // Page
 // ==================================================================
 export default function MuuzajiStoreManage() {
   const { user } = useAuth()
 
-  const [products, setProducts] = useState<Product[]>([])
+  // ================================================================
+  // ✅ DUKA HUSIKA + MTU HUSIKA
+  // ================================================================
+  const storeId = user?.store_id || undefined
+  const userId = user?.id || undefined
+
+  const [store, setStore] = useState<StoreType | null>(null)
+  const [products, setProducts] = useState<ProductWithStock[]>([])
   const [movements, setMovements] = useState<StockMovement[]>([])
   const [adjustments, setAdjustments] = useState<StockAdjustment[]>([])
 
@@ -52,21 +65,62 @@ export default function MuuzajiStoreManage() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
   // ------------------------------------------------------------------
-  // Load
+  // Load — ✅ inachuja kwa duka husika
   // ------------------------------------------------------------------
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
+
+    // ✅ Hakikisha mtumiaji ana duka
+    if (!storeId) {
+      setError('Hujapangiwa duka. Wasiliana na mmiliki ili akupange.')
+      setLoading(false)
+      return
+    }
+
+    // ✅ Hakikisha mtumiaji ana ID
+    if (!userId) {
+      setError('Hujajisajili. Ingia tena.')
+      setLoading(false)
+      return
+    }
+
+    // ✅ Role guard
+    if (
+      user?.role !== 'muuzaji' &&
+      user?.role !== 'mmiliki' &&
+      user?.role !== 'admin' &&
+      user?.role !== 'mhazini'
+    ) {
+      setError('Huna ruhusa ya kuona stoki ya duka.')
+      setLoading(false)
+      return
+    }
+
     try {
-      const storeId = user?.store_id || undefined
-      const [prods, movs, adjs] = await Promise.all([
-        productsApi.list(storeId),
-        inventoryApi.movements({ store: storeId }),
-        inventoryApi.stockAdjustments({ store: storeId }),
+      const [prods, movs, adjs, stocks, myStore] = await Promise.all([
+        productsApi.list(storeId),                              // ✅ bidhaa za duka
+        inventoryApi.movements({ store: storeId }),              // ✅ movements za duka
+        inventoryApi.stockAdjustments({ store: storeId }),       // ✅ marekebisho ya duka
+        inventoryApi.stockLevels({ store: storeId }),            // ✅ stoki halisi ya duka
+        storesApi.get(storeId),                                  // ✅ duka moja
       ])
-      setProducts(prods)
+
+      // ✅ Unganisha bidhaa na stoki yake
+      const stockMap = new Map<string, number>()
+      stocks.forEach((s: StockLevel) => {
+        stockMap.set(s.product, parseFloat(s.quantity))
+      })
+
+      const productsWithStock: ProductWithStock[] = prods.map((p) => ({
+        ...p,
+        stock_quantity: stockMap.get(p.id) || 0,
+      }))
+
+      setProducts(productsWithStock)
       setMovements(movs)
       setAdjustments(adjs)
+      setStore(myStore)
     } catch (err: any) {
       setError(
         err?.response?.data?.detail ||
@@ -75,17 +129,50 @@ export default function MuuzajiStoreManage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [storeId, userId, user?.role])
 
   useEffect(() => {
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.store_id])
+  }, [load])
 
   // ------------------------------------------------------------------
-  // Thibitisha marekebisho
+  // ✅ Defense in depth: chuja tena kwa usalama
+  // ------------------------------------------------------------------
+  const myMovements = useMemo(() => {
+    if (!storeId) return []
+    return movements.filter((m) => !m.store || m.store === storeId)
+  }, [movements, storeId])
+
+  const myAdjustments = useMemo(() => {
+    if (!storeId) return []
+    return adjustments.filter((a) => !a.store || a.store === storeId)
+  }, [adjustments, storeId])
+
+  // ------------------------------------------------------------------
+  // Thibitisha marekebisho — ✅ inathibitisha duka
   // ------------------------------------------------------------------
   const thibitishaMarekebisho = async (id: string) => {
+    if (!storeId) {
+      setToast({ msg: 'Hujapangiwa duka.', ok: false })
+      setTimeout(() => setToast(null), 3000)
+      return
+    }
+
+    // ✅ Hakikisha marekebisho ni ya duka lake
+    const adj = myAdjustments.find((a) => a.id === id)
+    if (!adj) {
+      setToast({ msg: 'Marekebisho hayapatikani kwenye duka lako.', ok: false })
+      setTimeout(() => setToast(null), 3000)
+      return
+    }
+
+    // ✅ Ulinzi wa ziada: store_id check
+    if (adj.store && adj.store !== storeId) {
+      setToast({ msg: 'Marekebisho si ya duka lako.', ok: false })
+      setTimeout(() => setToast(null), 3000)
+      return
+    }
+
     try {
       await inventoryApi.approveAdjustment(id)
       setToast({ msg: 'Marekebisho yamethibitishwa.', ok: true })
@@ -101,26 +188,27 @@ export default function MuuzajiStoreManage() {
   }
 
   // ------------------------------------------------------------------
-  // Uingizaji = movements za manunuzi
+  // Uingizaji = movements za manunuzi (za duka hili pekee)
   // ------------------------------------------------------------------
   const uingizaji = useMemo(
-    () => movements.filter((m) => m.movement_type === 'manunuzi'),
-    [movements]
+    () => myMovements.filter((m) => m.movement_type === 'manunuzi'),
+    [myMovements]
   )
 
   // ------------------------------------------------------------------
-  // Stats
+  // Stats — kwa data ya duka hili pekee
   // ------------------------------------------------------------------
   const stats = useMemo(() => {
     const jumla = products.length
-    // Stoki halisi inakuja kutoka stock_levels, lakini kwa sasa tunatumia products pekee
-    // (kama unataka stoki halisi, ongeza inventoryApi.stockLevels())
-    const chini = products.filter((p) => p.is_active).length
+    const zinazopatikana = products.filter((p) => p.stock_quantity > 0).length
     const thamani = products.reduce(
-      (s, p) => s + parseFloat(p.cost_price || '0'),
+      (s, p) => s + parseFloat(p.cost_price || '0') * p.stock_quantity,
       0
     )
-    return { jumla, chini, thamani }
+    const chiniYaKiwango = products.filter(
+      (p) => p.stock_quantity <= (p.low_stock_alert || 5)
+    ).length
+    return { jumla, zinazopatikana, thamani, chiniYaKiwango }
   }, [products])
 
   // ------------------------------------------------------------------
@@ -133,10 +221,35 @@ export default function MuuzajiStoreManage() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
             <Store size={26} className="text-brand-600" /> Usimamizi wa Stoki
+            <span
+              className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded"
+              title="Data ya duka lako pekee"
+            >
+              <Lock size={10} /> Duka Lako
+            </span>
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {user?.full_name || 'Muuzaji'} — bidhaa, marekebisho, na uingizaji
-          </p>
+          <div className="text-sm text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1">
+              <User size={12} /> {user?.full_name || 'Muuzaji'}
+            </span>
+            <span className="text-slate-300">|</span>
+            {loading ? (
+              <SkeletonLine className="h-4 w-32" />
+            ) : store ? (
+              <span className="inline-flex items-center gap-1 text-brand-700 font-medium">
+                <Store size={14} />
+                {store.name}
+                <span className="text-slate-400 font-normal">
+                  ({store.location})
+                </span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-amber-600">
+                <AlertTriangle size={14} />
+                Hujapangiwa duka
+              </span>
+            )}
+          </div>
         </div>
         <button
           onClick={load}
@@ -153,19 +266,16 @@ export default function MuuzajiStoreManage() {
         <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <div className="flex-1">{error}</div>
-          <button
-            onClick={load}
-            className="text-xs font-semibold underline"
-          >
+          <button onClick={load} className="text-xs font-semibold underline">
             Jaribu tena
           </button>
         </div>
       )}
 
       {/* STATS */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {loading ? (
-          Array.from({ length: 3 }).map((_, i) => <MiniStatSkeleton key={i} />)
+          Array.from({ length: 4 }).map((_, i) => <MiniStatSkeleton key={i} />)
         ) : (
           <>
             <MiniStat
@@ -175,13 +285,19 @@ export default function MuuzajiStoreManage() {
               tone="text-blue-600"
             />
             <MiniStat
-              label="Zinazopatikana"
-              value={String(stats.chini)}
+              label="Zenye Stoki"
+              value={String(stats.zinazopatikana)}
               Icon={Layers}
               tone="text-emerald-600"
             />
             <MiniStat
-              label="Thamani ya Ununuzi"
+              label="Chini ya Kiwango"
+              value={String(stats.chiniYaKiwango)}
+              Icon={AlertTriangle}
+              tone="text-amber-600"
+            />
+            <MiniStat
+              label="Thamani ya Stoki"
               value={formatTsh(stats.thamani)}
               Icon={PackageX}
               tone="text-purple-600"
@@ -199,29 +315,34 @@ export default function MuuzajiStoreManage() {
             <Layers size={18} className="text-brand-600" />
             Stoki ({products.length})
           </h2>
+          {store && (
+            <span className="text-xs text-slate-500 inline-flex items-center gap-1">
+              <Store size={12} /> {store.name}
+            </span>
+          )}
         </div>
         <StokiTable products={products} loading={loading} />
       </div>
 
       {/* ============================================================ */}
-      {/* SEHEMU 2: MAREKEBISHO */}
+      {/* SEHEMU 2: MAREKEBISHO — ✅ myAdjustments */}
       {/* ============================================================ */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         <div className="p-4 border-b border-slate-100">
           <h2 className="font-semibold flex items-center gap-2">
             <RefreshCcw size={18} className="text-brand-600" />
-            Marekebisho ya Stoki ({adjustments.length})
+            Marekebisho ya Stoki ({myAdjustments.length})
           </h2>
         </div>
         <MarekebishoTable
-          adjustments={adjustments}
+          adjustments={myAdjustments}
           loading={loading}
           onThibitisha={thibitishaMarekebisho}
         />
       </div>
 
       {/* ============================================================ */}
-      {/* SEHEMU 3: UINGIZAJI */}
+      {/* SEHEMU 3: UINGIZAJI — ✅ uingizaji (kutoka myMovements) */}
       {/* ============================================================ */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         <div className="p-4 border-b border-slate-100">
@@ -259,7 +380,7 @@ function StokiTable({
   products,
   loading,
 }: {
-  products: Product[]
+  products: ProductWithStock[]
   loading: boolean
 }) {
   const [q, setQ] = useState('')
@@ -295,76 +416,83 @@ function StokiTable({
       {loading ? (
         <div className="p-4 space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
-            <TableRowSkeleton key={i} cols={5} />
+            <TableRowSkeleton key={i} cols={6} />
           ))}
         </div>
       ) : filtered.length === 0 ? (
         <div className="p-10 text-center">
           <Package size={32} className="mx-auto text-slate-300 mb-2" />
           <div className="text-sm text-slate-500">
-            {products.length === 0 ? 'Hakuna bidhaa' : 'Hakuna matokeo'}
+            {products.length === 0 ? 'Hakuna bidhaa kwenye duka lako' : 'Hakuna matokeo'}
           </div>
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[760px]">
+          <table className="w-full text-sm min-w-[860px]">
             <thead className="bg-slate-50 text-left text-slate-500">
               <tr>
-                <th className="p-3 font-medium text-xs uppercase tracking-wide">
-                  Bidhaa
-                </th>
-                <th className="p-3 font-medium text-xs uppercase tracking-wide">
-                  Kundi
-                </th>
-                <th className="p-3 text-right font-medium text-xs uppercase tracking-wide">
-                  Bei Mauzo
-                </th>
-                <th className="p-3 text-right font-medium text-xs uppercase tracking-wide">
-                  Bei Ununuzi
-                </th>
-                <th className="p-3 font-medium text-xs uppercase tracking-wide">
-                  Hali
-                </th>
+                <th className="p-3 font-medium text-xs uppercase tracking-wide">Bidhaa</th>
+                <th className="p-3 font-medium text-xs uppercase tracking-wide">Kundi</th>
+                <th className="p-3 text-right font-medium text-xs uppercase tracking-wide">Stoki</th>
+                <th className="p-3 text-right font-medium text-xs uppercase tracking-wide">Bei Mauzo</th>
+                <th className="p-3 text-right font-medium text-xs uppercase tracking-wide">Bei Ununuzi</th>
+                <th className="p-3 font-medium text-xs uppercase tracking-wide">Hali</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((b) => (
-                <tr key={b.id} className="hover:bg-slate-50/50">
-                  <td className="p-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-lg bg-slate-50 border border-slate-200 grid place-items-center text-slate-600 shrink-0">
-                        <Package size={16} />
+              {filtered.map((b) => {
+                const low = b.stock_quantity <= (b.low_stock_alert || 5)
+                return (
+                  <tr key={b.id} className="hover:bg-slate-50/50">
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-9 h-9 rounded-lg bg-slate-50 border border-slate-200 grid place-items-center text-slate-600 shrink-0">
+                          <Package size={16} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{b.name}</div>
+                          <div className="text-xs text-slate-500">{b.sku}</div>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">{b.name}</div>
-                        <div className="text-xs text-slate-500">{b.sku}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-3">
-                    <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                      {b.category_name || '—'}
-                    </span>
-                  </td>
-                  <td className="p-3 text-right text-brand-700 font-semibold">
-                    {formatTsh(b.selling_price)}
-                  </td>
-                  <td className="p-3 text-right text-slate-600">
-                    {formatTsh(b.cost_price)}
-                  </td>
-                  <td className="p-3">
-                    {b.is_active ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded text-emerald-700 bg-emerald-50">
-                        <CheckCircle2 size={10} /> Hai
+                    </td>
+                    <td className="p-3">
+                      <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                        {b.category_name || '—'}
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded text-red-700 bg-red-50">
-                        <XCircle size={10} /> Imezimwa
+                    </td>
+                    <td className="p-3 text-right">
+                      <span
+                        className={`font-bold ${
+                          b.stock_quantity === 0
+                            ? 'text-red-600'
+                            : low
+                            ? 'text-amber-600'
+                            : 'text-emerald-700'
+                        }`}
+                      >
+                        {b.stock_quantity}
                       </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="p-3 text-right text-brand-700 font-semibold">
+                      {formatTsh(b.selling_price)}
+                    </td>
+                    <td className="p-3 text-right text-slate-600">
+                      {formatTsh(b.cost_price)}
+                    </td>
+                    <td className="p-3">
+                      {b.is_active ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded text-emerald-700 bg-emerald-50">
+                          <CheckCircle2 size={10} /> Hai
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded text-red-700 bg-red-50">
+                          <XCircle size={10} /> Imezimwa
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -386,9 +514,7 @@ function MarekebishoTable({
   onThibitisha: (id: string) => void
 }) {
   const [q, setQ] = useState('')
-  const [filter, setFilter] = useState<StockAdjustment['status'] | 'zote'>(
-    'zote'
-  )
+  const [filter, setFilter] = useState<StockAdjustment['status'] | 'zote'>('zote')
 
   const filtered = useMemo(() => {
     return adjustments.filter((m) => {
@@ -420,21 +546,19 @@ function MarekebishoTable({
         </div>
         <div className="flex flex-wrap gap-1.5 items-center">
           <ListFilter size={14} className="text-slate-400" />
-          {(['zote', 'inasubiri', 'imekubaliwa', 'imekataliwa'] as const).map(
-            (k) => (
-              <button
-                key={k}
-                onClick={() => setFilter(k)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${
-                  filter === k
-                    ? 'bg-brand-600 text-white border-brand-600 font-semibold'
-                    : 'bg-white border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                {k === 'zote' ? 'Zote' : HALI_ADJ_META[k].label}
-              </button>
-            )
-          )}
+          {(['zote', 'inasubiri', 'imekubaliwa', 'imekataliwa'] as const).map((k) => (
+            <button
+              key={k}
+              onClick={() => setFilter(k)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${
+                filter === k
+                  ? 'bg-brand-600 text-white border-brand-600 font-semibold'
+                  : 'bg-white border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {k === 'zote' ? 'Zote' : HALI_ADJ_META[k].label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -449,7 +573,7 @@ function MarekebishoTable({
           <RefreshCcw size={32} className="mx-auto text-slate-300 mb-2" />
           <div className="text-sm text-slate-500">
             {adjustments.length === 0
-              ? 'Hakuna marekebisho'
+              ? 'Hakuna marekebisho kwenye duka lako'
               : 'Hakuna marekebisho yanayolingana'}
           </div>
         </div>
@@ -458,21 +582,11 @@ function MarekebishoTable({
           <table className="w-full text-sm min-w-[760px]">
             <thead className="bg-slate-50 text-left text-slate-500">
               <tr>
-                <th className="p-3 font-medium text-xs uppercase tracking-wide">
-                  ID
-                </th>
-                <th className="p-3 font-medium text-xs uppercase tracking-wide">
-                  Bidhaa
-                </th>
-                <th className="p-3 font-medium text-xs uppercase tracking-wide">
-                  Sababu
-                </th>
-                <th className="p-3 text-right font-medium text-xs uppercase tracking-wide">
-                  Wingi
-                </th>
-                <th className="p-3 font-medium text-xs uppercase tracking-wide">
-                  Hali
-                </th>
+                <th className="p-3 font-medium text-xs uppercase tracking-wide">ID</th>
+                <th className="p-3 font-medium text-xs uppercase tracking-wide">Bidhaa</th>
+                <th className="p-3 font-medium text-xs uppercase tracking-wide">Sababu</th>
+                <th className="p-3 text-right font-medium text-xs uppercase tracking-wide">Wingi</th>
+                <th className="p-3 font-medium text-xs uppercase tracking-wide">Hali</th>
                 <th className="p-3"></th>
               </tr>
             </thead>
@@ -481,9 +595,7 @@ function MarekebishoTable({
                 const hali = HALI_ADJ_META[m.status]
                 return (
                   <tr key={m.id} className="hover:bg-slate-50/50">
-                    <td className="p-3 font-mono text-xs">
-                      #{m.id.slice(0, 8)}
-                    </td>
+                    <td className="p-3 font-mono text-xs">#{m.id.slice(0, 8)}</td>
                     <td className="p-3">
                       <div className="font-medium truncate max-w-[180px]">
                         {m.product_name || m.product}
@@ -492,13 +604,9 @@ function MarekebishoTable({
                     <td className="p-3 text-slate-600 text-xs max-w-[200px] truncate">
                       {m.reason}
                     </td>
-                    <td className="p-3 text-right font-semibold">
-                      {m.quantity}
-                    </td>
+                    <td className="p-3 text-right font-semibold">{m.quantity}</td>
                     <td className="p-3">
-                      <span
-                        className={`inline-flex items-center gap-1 text-xs font-semibold ${hali.tone}`}
-                      >
+                      <span className={`inline-flex items-center gap-1 text-xs font-semibold ${hali.tone}`}>
                         <hali.Icon size={12} />
                         {hali.label}
                       </span>
@@ -577,7 +685,7 @@ function UingizajiTable({
           <Truck size={32} className="mx-auto text-slate-300 mb-2" />
           <div className="text-sm text-slate-500">
             {movements.length === 0
-              ? 'Hakuna uingizaji bado'
+              ? 'Hakuna uingizaji kwenye duka lako'
               : 'Hakuna uingizaji unaolingana'}
           </div>
         </div>
@@ -586,44 +694,28 @@ function UingizajiTable({
           <table className="w-full text-sm min-w-[760px]">
             <thead className="bg-slate-50 text-left text-slate-500">
               <tr>
-                <th className="p-3 font-medium text-xs uppercase tracking-wide">
-                  ID
-                </th>
-                <th className="p-3 font-medium text-xs uppercase tracking-wide">
-                  Bidhaa
-                </th>
-                <th className="p-3 text-right font-medium text-xs uppercase tracking-wide">
-                  Wingi
-                </th>
-                <th className="p-3 text-right font-medium text-xs uppercase tracking-wide">
-                  Bei
-                </th>
-                <th className="p-3 font-medium text-xs uppercase tracking-wide">
-                  Tarehe
-                </th>
+                <th className="p-3 font-medium text-xs uppercase tracking-wide">ID</th>
+                <th className="p-3 font-medium text-xs uppercase tracking-wide">Bidhaa</th>
+                <th className="p-3 text-right font-medium text-xs uppercase tracking-wide">Wingi</th>
+                <th className="p-3 text-right font-medium text-xs uppercase tracking-wide">Bei</th>
+                <th className="p-3 font-medium text-xs uppercase tracking-wide">Tarehe</th>
                 <th className="p-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map((u) => (
                 <tr key={u.id} className="hover:bg-slate-50/50">
-                  <td className="p-3 font-mono text-xs">
-                    #{u.id.slice(0, 8)}
-                  </td>
+                  <td className="p-3 font-mono text-xs">#{u.id.slice(0, 8)}</td>
                   <td className="p-3">
                     <div className="font-medium truncate max-w-[200px]">
                       {u.product_name || u.product}
                     </div>
                   </td>
-                  <td className="p-3 text-right font-semibold">
-                    {u.quantity}
-                  </td>
+                  <td className="p-3 text-right font-semibold">{u.quantity}</td>
                   <td className="p-3 text-right text-brand-700 font-semibold">
                     {formatTsh(u.unit_cost)}
                   </td>
-                  <td className="p-3 text-xs text-slate-500">
-                    {formatDate(u.created_at)}
-                  </td>
+                  <td className="p-3 text-xs text-slate-500">{formatDate(u.created_at)}</td>
                   <td className="p-3 text-right">
                     <button
                       onClick={() => setSelected(u)}
@@ -641,10 +733,7 @@ function UingizajiTable({
       )}
 
       {selected && (
-        <UingizajiDetail
-          movement={selected}
-          onClose={() => setSelected(null)}
-        />
+        <UingizajiDetail movement={selected} onClose={() => setSelected(null)} />
       )}
     </div>
   )
@@ -673,10 +762,7 @@ function UingizajiDetail({
               {formatDate(movement.created_at)}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-100"
-          >
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100">
             <X size={18} />
           </button>
         </div>

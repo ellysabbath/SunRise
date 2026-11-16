@@ -1,19 +1,22 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Plus, Search, X, Save, Phone, MapPin, RefreshCw,
   Users, AlertTriangle, Loader2, CheckCircle2, XCircle,
+  Store, User, Lock,
 } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 import {
   customersApi,
   type Customer,
   type CustomerType,
 } from '../../services/customers'
 import { ordersApi } from '../../services/orders'
+import { storesApi, type Store as StoreType } from '../../services/stores'
 import { formatTsh } from '../../lib/format'
 import { SkeletonLine } from '../../components/Skeleton'
 
 // ==================================================================
-// Aina za mteja (backend: rejareja, jumla, mkandarasi)
+// Aina za mteja
 // ==================================================================
 const AINA: { key: CustomerType; label: string }[] = [
   { key: 'rejareja', label: 'Rejareja' },
@@ -22,7 +25,7 @@ const AINA: { key: CustomerType; label: string }[] = [
 ]
 
 // ==================================================================
-// Types za ndani (kutoka orders)
+// Types za ndani
 // ==================================================================
 interface OrderPayment {
   id: string
@@ -33,6 +36,7 @@ interface OrderPayment {
 interface Order {
   id: string
   customer: string
+  store?: string
   total: string
   payments: OrderPayment[]
 }
@@ -41,8 +45,17 @@ interface Order {
 // Page
 // ==================================================================
 export default function MuuzajiWateja() {
+  const { user } = useAuth()
+
+  // ================================================================
+  // ✅ DUKA HUSIKA + MTU HUSIKA
+  // ================================================================
+  const storeId = user?.store_id || undefined
+  const userId = user?.id || undefined
+
   const [customers, setCustomers] = useState<Customer[]>([])
   const [orders, setOrders] = useState<Order[]>([])
+  const [store, setStore] = useState<StoreType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [q, setQ] = useState('')
@@ -50,18 +63,39 @@ export default function MuuzajiWateja() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
   // ------------------------------------------------------------------
-  // Load
+  // Load — ✅ inachuja kwa duka husika
   // ------------------------------------------------------------------
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
+
+    // ✅ Hakikisha mtumiaji ana duka
+    if (!storeId) {
+      setError('Hujapangiwa duka. Wasiliana na mmiliki.')
+      setLoading(false)
+      return
+    }
+
+    // ✅ Role guard
+    if (
+      user.role !== 'muuzaji' &&
+      user.role !== 'mmiliki' &&
+      user.role !== 'admin'
+    ) {
+      setError('Huna ruhusa ya kuona wateja wa duka.')
+      setLoading(false)
+      return
+    }
+
     try {
-      const [custs, ords] = await Promise.all([
-        customersApi.list(),
-        ordersApi.list(),
+      const [custs, ords, myStore] = await Promise.all([
+        customersApi.list({ store: storeId }),           // ✅ WATEJA WA DUKA HUSIKA
+        ordersApi.list({ store: storeId }),              // ✅ ORDERS ZA DUKA HUSIKA
+        storesApi.get(storeId),                          // ✅ duka moja
       ])
       setCustomers(custs)
       setOrders(ords as Order[])
+      setStore(myStore)
     } catch (err: any) {
       setError(
         err?.response?.data?.detail ||
@@ -70,31 +104,44 @@ export default function MuuzajiWateja() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [storeId, user?.role])
 
   useEffect(() => {
     load()
-  }, [])
+  }, [load])
+
+  // ------------------------------------------------------------------
+  // ✅ Defense in depth: chuja tena
+  // ------------------------------------------------------------------
+  const myCustomers = useMemo(() => {
+    // customersApi.list({ store }) tayari imechuja — hii ni ulinzi wa ziada
+    return customers.filter((c) => !c.store_id || c.store_id === storeId)
+  }, [customers, storeId])
+
+  const myOrders = useMemo(() => {
+    if (!storeId) return []
+    return orders.filter((o) => !o.store || o.store === storeId)
+  }, [orders, storeId])
 
   // ------------------------------------------------------------------
   // Filter
   // ------------------------------------------------------------------
   const filtered = useMemo(() => {
     const query = q.toLowerCase().trim()
-    if (!query) return customers
-    return customers.filter(
+    if (!query) return myCustomers
+    return myCustomers.filter(
       (m) =>
         m.full_name.toLowerCase().includes(query) ||
         m.phone.includes(query)
     )
-  }, [customers, q])
+  }, [myCustomers, q])
 
   // ------------------------------------------------------------------
-  // Deni kwa kila mteja (kutoka orders)
+  // Deni kwa kila mteja (kutoka orders za duka hili pekee)
   // ------------------------------------------------------------------
   const deniKwaMteja = useMemo<Record<string, number>>(() => {
     const map: Record<string, number> = {}
-    orders.forEach((o) => {
+    myOrders.forEach((o) => {
       const confirmed = o.payments
         .filter((p) => p.status === 'imethibitishwa')
         .reduce((s, p) => s + parseFloat(p.amount || '0'), 0)
@@ -102,21 +149,21 @@ export default function MuuzajiWateja() {
       map[o.customer] = (map[o.customer] || 0) + baki
     })
     return map
-  }, [orders])
+  }, [myOrders])
 
   // ------------------------------------------------------------------
-  // Manunuzi kwa mteja (jumla ya orders)
+  // Manunuzi kwa mteja
   // ------------------------------------------------------------------
   const manunuziKwaMteja = useMemo<Record<string, number>>(() => {
     const map: Record<string, number> = {}
-    orders.forEach((o) => {
+    myOrders.forEach((o) => {
       map[o.customer] = (map[o.customer] || 0) + parseFloat(o.total || '0')
     })
     return map
-  }, [orders])
+  }, [myOrders])
 
   // ------------------------------------------------------------------
-  // Ongeza mteja
+  // Ongeza mteja — ✅ inaunganisha na duka
   // ------------------------------------------------------------------
   const ongezaMteja = async (payload: {
     full_name: string
@@ -124,8 +171,18 @@ export default function MuuzajiWateja() {
     location: string
     customer_type: CustomerType
   }) => {
+    // ✅ Hakikisha duka lipo
+    if (!storeId) {
+      setToast({ msg: 'Hujapangiwa duka. Wasiliana na mmiliki.', ok: false })
+      setTimeout(() => setToast(null), 3000)
+      throw new Error('Hujapangiwa duka.')
+    }
+
     try {
-      const mteja = await customersApi.create(payload)
+      const mteja = await customersApi.create({
+        ...payload,
+        store: storeId,       // ✅ mteja anaundwa kwa duka husika
+      })
       setCustomers((prev) => [mteja, ...prev])
       setOpen(false)
       setToast({ msg: `Mteja ${mteja.full_name} ameongezwa.`, ok: true })
@@ -136,6 +193,7 @@ export default function MuuzajiWateja() {
         'Imeshindikana kuongeza mteja.'
       setToast({ msg: detail, ok: false })
       setTimeout(() => setToast(null), 4000)
+      throw err
     }
   }
 
@@ -149,10 +207,35 @@ export default function MuuzajiWateja() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
             <Users size={26} className="text-brand-600" /> Wateja
+            <span
+              className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded"
+              title="Wateja wa duka lako pekee"
+            >
+              <Lock size={10} /> Duka Lako
+            </span>
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Sajili na simamia wateja wa duka
-          </p>
+          <div className="text-sm text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1">
+              <User size={12} /> {user?.full_name || 'Muuzaji'}
+            </span>
+            <span className="text-slate-300">|</span>
+            {loading ? (
+              <SkeletonLine className="h-4 w-32" />
+            ) : store ? (
+              <span className="inline-flex items-center gap-1 text-brand-700 font-medium">
+                <Store size={14} />
+                {store.name}
+                <span className="text-slate-400 font-normal">
+                  ({store.location})
+                </span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-amber-600">
+                <AlertTriangle size={14} />
+                Hujapangiwa duka
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button
@@ -165,7 +248,8 @@ export default function MuuzajiWateja() {
           </button>
           <button
             onClick={() => setOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-semibold hover:bg-brand-700"
+            disabled={!storeId}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-60"
           >
             <Plus size={16} /> Ongeza Mteja
           </button>
@@ -191,16 +275,13 @@ export default function MuuzajiWateja() {
         <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <div className="flex-1">{error}</div>
-          <button
-            onClick={load}
-            className="text-xs font-semibold underline"
-          >
+          <button onClick={load} className="text-xs font-semibold underline">
             Jaribu tena
           </button>
         </div>
       )}
 
-      {/* Loading — skeleton grid */}
+      {/* Loading */}
       {loading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -214,7 +295,9 @@ export default function MuuzajiWateja() {
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
           <Users size={40} className="mx-auto text-slate-300 mb-3" />
           <h3 className="font-semibold">
-            {q ? 'Hakuna matokeo ya utafutaji' : 'Hakuna wateja bado'}
+            {q
+              ? 'Hakuna matokeo ya utafutaji'
+              : 'Hakuna wateja bado kwenye duka lako'}
           </h3>
           <p className="text-sm text-slate-500 mt-1">
             {q
@@ -293,7 +376,11 @@ export default function MuuzajiWateja() {
 
       {/* Modal */}
       {open && (
-        <Fomu onClose={() => setOpen(false)} onSubmit={ongezaMteja} />
+        <Fomu
+          storeId={storeId}
+          onClose={() => setOpen(false)}
+          onSubmit={ongezaMteja}
+        />
       )}
 
       {/* Toast */}
@@ -347,12 +434,14 @@ function WatejaSkeleton() {
 }
 
 // ==================================================================
-// Fomu ya kuongeza mteja
+// Fomu ya kuongeza mteja — ✅ inapokea storeId
 // ==================================================================
 function Fomu({
+  storeId,
   onClose,
   onSubmit,
 }: {
+  storeId?: string
   onClose: () => void
   onSubmit: (payload: {
     full_name: string
@@ -371,6 +460,12 @@ function Fomu({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    // ✅ Hakikisha duka lipo
+    if (!storeId) {
+      setError('Hujapangiwa duka. Wasiliana na mmiliki.')
+      return
+    }
 
     if (!jina.trim()) return setError('Jina linahitajika')
     if (!/^0[67]\d{2}-?\d{3}-?\d{3}$/.test(simu.replace(/\s/g, '')))
@@ -405,7 +500,7 @@ function Fomu({
           <div>
             <div className="font-semibold">Ongeza Mteja</div>
             <div className="text-xs text-slate-500">
-              Jaza taarifa za mteja
+              Jaza taarifa za mteja wa duka lako
             </div>
           </div>
           <button
@@ -491,7 +586,7 @@ function Fomu({
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !storeId}
               className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
             >
               {loading ? (
