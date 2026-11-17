@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Store, Users, Package, Plus, X, Save, MapPin,
   AlertTriangle, CheckCircle2, RefreshCw, Loader2,
-  TrendingUp, TrendingDown,
+  TrendingUp, TrendingDown, Pencil,
 } from 'lucide-react'
 import { storesApi, type Store as StoreType } from '../../services/stores'
 import { ordersApi, type Order } from '../../services/orders'
@@ -51,6 +51,7 @@ export default function MmilikiMaduka() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
+  const [editStore, setEditStore] = useState<StoreType | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
   // ------------------------------------------------------------------
@@ -227,6 +228,30 @@ export default function MmilikiMaduka() {
     }
   }
 
+  // ------------------------------------------------------------------
+  // Hariri duka
+  // ------------------------------------------------------------------
+  const haririDuka = async (
+    id: string,
+    data: { name: string; location: string }
+  ) => {
+    try {
+      const updated = await storesApi.update(id, data)
+      setStores((prev) => prev.map((s) => (s.id === id ? updated : s)))
+      setEditStore(null)
+      setToast({ msg: `Duka "${updated.name}" limehaririwa.`, ok: true })
+      setTimeout(() => setToast(null), 3000)
+    } catch (err: any) {
+      setToast({
+        msg:
+          err?.response?.data?.detail || 'Imeshindikana kuhariri duka.',
+        ok: false,
+      })
+      setTimeout(() => setToast(null), 4000)
+      throw err
+    }
+  }
+
   // ==================================================================
   // Render
   // ==================================================================
@@ -351,15 +376,24 @@ export default function MmilikiMaduka() {
                 <div className="w-11 h-11 rounded-lg bg-slate-50 border border-slate-200 text-brand-600 grid place-items-center">
                   <Store size={20} />
                 </div>
-                {stats.duka.is_active ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                    <CheckCircle2 size={10} /> Hai
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded">
-                    <X size={10} /> Imezimwa
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {stats.duka.is_active ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                      <CheckCircle2 size={10} /> Hai
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded">
+                      <X size={10} /> Imezimwa
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setEditStore(stats.duka)}
+                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors"
+                    title="Hariri duka"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                </div>
               </div>
 
               {/* Jina + mahali */}
@@ -434,9 +468,21 @@ export default function MmilikiMaduka() {
         </div>
       )}
 
-      {/* Modal */}
+      {/* Modal - Ongeza */}
       {open && (
         <FomuDuka onClose={() => setOpen(false)} onSubmit={ongezaDuka} />
+      )}
+
+      {/* Modal - Hariri */}
+      {editStore && (
+        <FomuDuka
+          onClose={() => setEditStore(null)}
+          onSubmit={(data) => haririDuka(editStore.id, data)}
+          initialData={{
+            name: editStore.name,
+            location: editStore.location,
+          }}
+        />
       )}
 
       {/* Toast */}
@@ -537,14 +583,18 @@ function DukaSkeleton() {
 function FomuDuka({
   onClose,
   onSubmit,
+  initialData,
 }: {
   onClose: () => void
   onSubmit: (data: { name: string; location: string }) => Promise<void>
+  initialData?: { name: string; location: string }
 }) {
-  const [name, setName] = useState('')
-  const [location, setLocation] = useState('')
+  const [name, setName] = useState(initialData?.name || '')
+  const [location, setLocation] = useState(initialData?.location || '')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const isEdit = !!initialData
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -578,8 +628,12 @@ function FomuDuka({
       <div className="relative bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center">
           <div>
-            <div className="font-semibold">Ongeza Duka Jipya</div>
-            <div className="text-xs text-slate-500">Weka taarifa za duka</div>
+            <div className="font-semibold">
+              {isEdit ? 'Hariri Duka' : 'Ongeza Duka Jipya'}
+            </div>
+            <div className="text-xs text-slate-500">
+              {isEdit ? 'Badilisha taarifa za duka' : 'Weka taarifa za duka'}
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -644,7 +698,7 @@ function FomuDuka({
               ) : (
                 <>
                   <Save size={16} />
-                  Hifadhi Duka
+                  {isEdit ? 'Hifadhi Marekebisho' : 'Hifadhi Duka'}
                 </>
               )}
             </button>

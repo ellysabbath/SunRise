@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Users, Plus, Search, X, Loader2, Pencil, Trash2, Key, Power,
   Shield, ShieldCheck, ShieldX, AlertTriangle, CheckCircle2,
-  Phone, Filter, UserCheck, UserX, Crown, ShoppingBag,
+  Phone, UserCheck, UserX, Crown, ShoppingBag,
   MoreVertical, Eye, EyeOff, RefreshCw,
 } from 'lucide-react'
 import {
@@ -11,6 +12,7 @@ import {
   type UserRole,
   type UsersSummary,
 } from '../../services/mmiliki'
+import { SkeletonLine } from '../../components/Skeleton'
 
 // ==================================================================
 // Meta
@@ -40,6 +42,9 @@ const ROLE_ICON: Record<UserRole, React.ElementType> = {
 }
 
 const ALL_ROLES: UserRole[] = ['mteja', 'muuzaji', 'mmiliki', 'admin', 'mhazini']
+
+const MENU_WIDTH = 208 // w-52 = 13rem = 208px
+const MENU_HEIGHT = 380 // estimate ya menu yote
 
 // ==================================================================
 // Page
@@ -80,15 +85,19 @@ export default function MmilikiUsers() {
   const [deleteTarget, setDeleteTarget] = useState<MmilikiUser | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  // Action menu
-  const [openMenu, setOpenMenu] = useState<string | null>(null)
+  // Action menu (portal-based)
+  const [openMenu, setOpenMenu] = useState<{
+    id: string
+    top: number
+    left: number
+  } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Detail modal
   const [detailUser, setDetailUser] = useState<MmilikiUser | null>(null)
 
   // ------------------------------------------------------------------
-  // Close menu on outside click
+  // Close menu on outside click / scroll / resize
   // ------------------------------------------------------------------
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -96,11 +105,54 @@ export default function MmilikiUsers() {
         setOpenMenu(null)
       }
     }
+    function onScroll() {
+      setOpenMenu(null)
+    }
+    function onResize() {
+      setOpenMenu(null)
+    }
     if (openMenu) {
       document.addEventListener('mousedown', onClick)
-      return () => document.removeEventListener('mousedown', onClick)
+      window.addEventListener('scroll', onScroll, true)
+      window.addEventListener('resize', onResize)
+      return () => {
+        document.removeEventListener('mousedown', onClick)
+        window.removeEventListener('scroll', onScroll, true)
+        window.removeEventListener('resize', onResize)
+      }
     }
   }, [openMenu])
+
+  // ------------------------------------------------------------------
+  // Open action menu (positioned relative to button, rendered in portal)
+  // ------------------------------------------------------------------
+  const openActionMenu = (
+    e: React.MouseEvent<HTMLButtonElement>,
+    userId: string
+  ) => {
+    e.stopPropagation()
+    if (openMenu?.id === userId) {
+      setOpenMenu(null)
+      return
+    }
+    const rect = e.currentTarget.getBoundingClientRect()
+
+    // Horizontal: align right edge of menu to button's right
+    let left = rect.right - MENU_WIDTH
+    if (left < 8) left = 8
+    if (left + MENU_WIDTH > window.innerWidth - 8) {
+      left = window.innerWidth - MENU_WIDTH - 8
+    }
+
+    // Vertical: below button by default; if no space, above
+    let top = rect.bottom + 4
+    if (top + MENU_HEIGHT > window.innerHeight - 8) {
+      top = rect.top - MENU_HEIGHT - 4
+      if (top < 8) top = 8
+    }
+
+    setOpenMenu({ id: userId, top, left })
+  }
 
   // ------------------------------------------------------------------
   // Load
@@ -369,7 +421,13 @@ export default function MmilikiUsers() {
       )}
 
       {/* Stats */}
-      {summary && (
+      {loading ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <StatCardSkeleton key={i} />
+          ))}
+        </div>
+      ) : summary ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard label="Jumla" value={summary.total} icon={Users} color="brand" />
           <StatCard label="Active" value={summary.active} icon={UserCheck} color="emerald" />
@@ -381,7 +439,7 @@ export default function MmilikiUsers() {
             color="amber"
           />
         </div>
-      )}
+      ) : null}
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-slate-200 p-4">
@@ -419,9 +477,34 @@ export default function MmilikiUsers() {
 
       {/* Users list */}
       {loading ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-          <Loader2 size={32} className="animate-spin mx-auto text-brand-600" />
-          <p className="text-sm text-slate-500 mt-3">Inapakia watumiaji...</p>
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          {/* Desktop skeleton table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="text-left px-4 py-3 font-semibold text-slate-700">Mtumiaji</th>
+                  <th className="text-left px-4 py-3 font-semibold text-slate-700">Role</th>
+                  <th className="text-left px-4 py-3 font-semibold text-slate-700">Hali</th>
+                  <th className="text-left px-4 py-3 font-semibold text-slate-700">Alijiunga</th>
+                  <th className="text-left px-4 py-3 font-semibold text-slate-700">Last Login</th>
+                  <th className="text-right px-4 py-3 font-semibold text-slate-700">Vitendo</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <UserRowSkeleton key={i} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile skeleton cards */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <UserCardSkeleton key={i} />
+            ))}
+          </div>
         </div>
       ) : users.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
@@ -493,77 +576,13 @@ export default function MmilikiUsers() {
                         {u.last_login_display || '—'}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="relative flex justify-end" ref={openMenu === u.id ? menuRef : null}>
+                        <div className="flex justify-end">
                           <button
-                            onClick={() => setOpenMenu(openMenu === u.id ? null : u.id)}
+                            onClick={(e) => openActionMenu(e, u.id)}
                             className="p-1.5 rounded-md hover:bg-slate-100"
                           >
                             <MoreVertical size={16} />
                           </button>
-                          {openMenu === u.id && (
-                            <div className="absolute right-0 top-full mt-1 w-52 bg-white rounded-lg border border-slate-200 shadow-xl py-1 z-20">
-                              <button
-                                onClick={() => {
-                                  setDetailUser(u)
-                                  setOpenMenu(null)
-                                }}
-                                className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-slate-50 text-left"
-                              >
-                                <Eye size={14} className="text-slate-500" /> Ona Maelezo
-                              </button>
-                              <button
-                                onClick={() => openEdit(u)}
-                                className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-slate-50 text-left"
-                              >
-                                <Pencil size={14} className="text-slate-500" /> Hariri
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setPwdTarget(u)
-                                  setPwdValue('')
-                                  setPwdError('')
-                                  setOpenMenu(null)
-                                }}
-                                className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-slate-50 text-left"
-                              >
-                                <Key size={14} className="text-slate-500" /> Badilisha Password
-                              </button>
-                              <div className="border-t border-slate-100 my-1" />
-                              <div className="px-3 py-1 text-[10px] font-semibold text-slate-400 uppercase">
-                                Badilisha Role
-                              </div>
-                              {ALL_ROLES.filter((r) => r !== u.role).map((r) => {
-                                const RIcon = ROLE_ICON[r]
-                                return (
-                                  <button
-                                    key={r}
-                                    onClick={() => handleChangeRole(u, r)}
-                                    className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-slate-50 text-left"
-                                  >
-                                    <RIcon size={14} className="text-slate-500" />
-                                    {ROLE_LABEL[r]}
-                                  </button>
-                                )
-                              })}
-                              <div className="border-t border-slate-100 my-1" />
-                              <button
-                                onClick={() => handleToggleActive(u)}
-                                className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-slate-50 text-left"
-                              >
-                                <Power size={14} className="text-slate-500" />
-                                {u.is_active ? 'Zima (Deactivate)' : 'Washa (Activate)'}
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setDeleteTarget(u)
-                                  setOpenMenu(null)
-                                }}
-                                className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-red-50 text-red-600 text-left"
-                              >
-                                <Trash2 size={14} /> Futa (Soft)
-                              </button>
-                            </div>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -625,10 +644,10 @@ export default function MmilikiUsers() {
                       <Pencil size={12} /> Hariri
                     </button>
                     <button
-                      onClick={() => handleToggleActive(u)}
+                      onClick={(e) => openActionMenu(e, u.id)}
                       className="px-3 py-2 rounded-lg bg-amber-50 text-amber-700 text-xs font-semibold hover:bg-amber-100"
                     >
-                      <Power size={12} />
+                      <MoreVertical size={12} />
                     </button>
                   </div>
                 </div>
@@ -637,6 +656,87 @@ export default function MmilikiUsers() {
           </div>
         </div>
       )}
+
+      {/* ================= ACTION MENU PORTAL ================= */}
+      {openMenu && (() => {
+        const targetUser = users.find((u) => u.id === openMenu.id)
+        if (!targetUser) return null
+        return createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: 'fixed',
+              top: openMenu.top,
+              left: openMenu.left,
+              width: MENU_WIDTH,
+              zIndex: 100,
+            }}
+            className="bg-white rounded-lg border border-slate-200 shadow-xl py-1"
+          >
+            <button
+              onClick={() => {
+                setDetailUser(targetUser)
+                setOpenMenu(null)
+              }}
+              className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-slate-50 text-left"
+            >
+              <Eye size={14} className="text-slate-500" /> Ona Maelezo
+            </button>
+            <button
+              onClick={() => openEdit(targetUser)}
+              className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-slate-50 text-left"
+            >
+              <Pencil size={14} className="text-slate-500" /> Hariri
+            </button>
+            <button
+              onClick={() => {
+                setPwdTarget(targetUser)
+                setPwdValue('')
+                setPwdError('')
+                setOpenMenu(null)
+              }}
+              className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-slate-50 text-left"
+            >
+              <Key size={14} className="text-slate-500" /> Badilisha Password
+            </button>
+            <div className="border-t border-slate-100 my-1" />
+            <div className="px-3 py-1 text-[10px] font-semibold text-slate-400 uppercase">
+              Badilisha Role
+            </div>
+            {ALL_ROLES.filter((r) => r !== targetUser.role).map((r) => {
+              const RIcon = ROLE_ICON[r]
+              return (
+                <button
+                  key={r}
+                  onClick={() => handleChangeRole(targetUser, r)}
+                  className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-slate-50 text-left"
+                >
+                  <RIcon size={14} className="text-slate-500" />
+                  {ROLE_LABEL[r]}
+                </button>
+              )
+            })}
+            <div className="border-t border-slate-100 my-1" />
+            <button
+              onClick={() => handleToggleActive(targetUser)}
+              className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-slate-50 text-left"
+            >
+              <Power size={14} className="text-slate-500" />
+              {targetUser.is_active ? 'Zima (Deactivate)' : 'Washa (Activate)'}
+            </button>
+            <button
+              onClick={() => {
+                setDeleteTarget(targetUser)
+                setOpenMenu(null)
+              }}
+              className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-red-50 text-red-600 text-left"
+            >
+              <Trash2 size={14} /> Futa (Soft)
+            </button>
+          </div>,
+          document.body
+        )
+      })()}
 
       {/* ================= CREATE/EDIT MODAL ================= */}
       {formOpen && (
@@ -999,6 +1099,78 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
       <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
         {children}
+      </div>
+    </div>
+  )
+}
+
+// ==================================================================
+// Skeletons
+// ==================================================================
+function StatCardSkeleton() {
+  return (
+    <div className="p-3 rounded-xl border border-slate-200 bg-white">
+      <div className="flex items-center justify-between">
+        <SkeletonLine className="h-3 w-16" />
+        <div className="w-4 h-4 rounded bg-slate-200 animate-pulse" />
+      </div>
+      <SkeletonLine className="h-7 w-12 mt-2" />
+    </div>
+  )
+}
+
+function UserRowSkeleton() {
+  return (
+    <tr>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-full bg-slate-200 animate-pulse shrink-0" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <SkeletonLine className="h-4 w-32" />
+            <SkeletonLine className="h-3 w-24" />
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-3">
+        <SkeletonLine className="h-6 w-20 rounded-md" />
+      </td>
+      <td className="px-4 py-3">
+        <SkeletonLine className="h-6 w-16 rounded-md" />
+      </td>
+      <td className="px-4 py-3">
+        <SkeletonLine className="h-3 w-20" />
+      </td>
+      <td className="px-4 py-3">
+        <SkeletonLine className="h-3 w-20" />
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex justify-end">
+          <div className="w-7 h-7 rounded-md bg-slate-200 animate-pulse" />
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+function UserCardSkeleton() {
+  return (
+    <div className="p-4">
+      <div className="flex items-start gap-3">
+        <div className="w-11 h-11 rounded-full bg-slate-200 animate-pulse shrink-0" />
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <SkeletonLine className="h-4 w-40" />
+          <SkeletonLine className="h-3 w-28" />
+          <div className="flex gap-1.5 mt-2">
+            <SkeletonLine className="h-4 w-16 rounded" />
+            <SkeletonLine className="h-4 w-14 rounded" />
+          </div>
+          <SkeletonLine className="h-3 w-32 mt-1" />
+        </div>
+      </div>
+      <div className="flex gap-2 mt-3">
+        <div className="flex-1 h-8 rounded-lg bg-slate-200 animate-pulse" />
+        <div className="flex-1 h-8 rounded-lg bg-slate-200 animate-pulse" />
+        <div className="w-10 h-8 rounded-lg bg-slate-200 animate-pulse" />
       </div>
     </div>
   )
