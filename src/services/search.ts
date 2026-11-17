@@ -10,7 +10,14 @@ export interface SearchResult {
   title: string
   subtitle: string
   route: string
-  Icon: any // lucide icon type
+  Icon?: any // lucide icon type
+}
+
+// ✅ Options type — inakubali store na scope
+export interface SearchOptions {
+  limit?: number
+  store?: string
+  scope?: SearchType[]
 }
 
 /**
@@ -18,75 +25,93 @@ export interface SearchResult {
  */
 export async function searchEverything(
   query: string,
-  options?: { limit?: number }
+  options: SearchOptions = {}
 ): Promise<SearchResult[]> {
   const q = query.trim().toLowerCase()
   if (!q) return []
 
-  const limit = options?.limit ?? 5
+  const { limit = 5, store, scope } = options
+
+  // ✅ Kama scope imetolewa, tumia — vinginevyo tafuta zote
+  const shouldSearch = (type: SearchType) =>
+    !scope || scope.includes(type)
 
   try {
+    // ✅ Fetch tu data zinazohitajika (kulingana na scope)
     const [products, customers, orders] = await Promise.all([
-      productsApi.list().catch(() => [] as Product[]),
-      customersApi.list().catch(() => [] as Customer[]),
-      ordersApi.list().catch(() => [] as any[]),
+      shouldSearch("bidhaa")
+        ? productsApi.list().catch(() => [] as Product[])
+        : Promise.resolve([] as Product[]),
+      shouldSearch("mteja")
+        ? customersApi.list().catch(() => [] as Customer[])
+        : Promise.resolve([] as Customer[]),
+      shouldSearch("order")
+        ? ordersApi.list().catch(() => [] as any[])
+        : Promise.resolve([] as any[]),
     ])
 
     const results: SearchResult[] = []
 
     // Bidhaa
-    products
-      .filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q)
-      )
-      .slice(0, limit)
-      .forEach((p) => {
-        results.push({
-          type: "bidhaa",
-          title: p.name,
-          subtitle: `SKU: ${p.sku} — TZS ${parseFloat(p.selling_price).toLocaleString()}`,
-          route: `/muuzaji`,
-          Icon: null,
+    if (shouldSearch("bidhaa")) {
+      products
+        .filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            p.sku.toLowerCase().includes(q)
+        )
+        .slice(0, limit)
+        .forEach((p) => {
+          results.push({
+            type: "bidhaa",
+            title: p.name,
+            subtitle: `SKU: ${p.sku} — TZS ${parseFloat(p.selling_price).toLocaleString()}`,
+            // ✅ Route inategemea store
+            route: store ? `/mteja/bidhaa?store=${store}` : `/mteja/bidhaa`,
+            Icon: null,
+          })
         })
-      })
+    }
 
     // Wateja
-    customers
-      .filter(
-        (c) =>
-          c.full_name.toLowerCase().includes(q) ||
-          c.phone.includes(q)
-      )
-      .slice(0, limit)
-      .forEach((c) => {
-        results.push({
-          type: "mteja",
-          title: c.full_name,
-          subtitle: c.phone,
-          route: `/muuzaji/wateja`,
-          Icon: null,
+    if (shouldSearch("mteja")) {
+      customers
+        .filter(
+          (c) =>
+            c.full_name.toLowerCase().includes(q) ||
+            c.phone.includes(q)
+        )
+        .slice(0, limit)
+        .forEach((c) => {
+          results.push({
+            type: "mteja",
+            title: c.full_name,
+            subtitle: c.phone,
+            route: `/muuzaji/wateja`,
+            Icon: null,
+          })
         })
-      })
+    }
 
     // Orders
-    orders
-      .filter(
-        (o: any) =>
-          o.id.toLowerCase().includes(q) ||
-          (o.customer_name || "").toLowerCase().includes(q)
-      )
-      .slice(0, limit)
-      .forEach((o: any) => {
-        results.push({
-          type: "order",
-          title: `Order #${o.id.slice(0, 8).toUpperCase()}`,
-          subtitle: `${o.customer_name || "Mteja"} — TZS ${parseFloat(o.total).toLocaleString()}`,
-          route: `/muuzaji/risiti`,
-          Icon: null,
+    if (shouldSearch("order")) {
+      orders
+        .filter(
+          (o: any) =>
+            o.id.toLowerCase().includes(q) ||
+            (o.customer_name || "").toLowerCase().includes(q)
+        )
+        .slice(0, limit)
+        .forEach((o: any) => {
+          results.push({
+            type: "order",
+            title: `Order #${o.id.slice(0, 8).toUpperCase()}`,
+            subtitle: `${o.customer_name || "Mteja"} — TZS ${parseFloat(o.total).toLocaleString()}`,
+            route: `/muuzaji/risiti`,
+            Icon: null,
+          })
         })
-      })
+    }
 
     return results.slice(0, 15)
   } catch {

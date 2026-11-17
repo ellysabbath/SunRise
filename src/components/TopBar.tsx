@@ -1,10 +1,16 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+  memo,
+} from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, Bell, Menu, Settings, User, LogOut, ChevronDown, X,
   ShoppingCart, Plus, Minus, Trash2, ArrowRight, LogOutIcon,
-  Package, Users, FileText, Mail, MessageSquare,
-  CheckCircle2, XCircle, AlertTriangle, Info, Loader2,
+  Package, Users, FileText, Mail, MessageSquare, Loader2,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useCart } from '../context/CartContext'
@@ -21,7 +27,7 @@ import { iconForKundi } from '../utils/icons'
 import { formatDate } from '../lib/format'
 
 // ==================================================================
-// Meta
+// Types
 // ==================================================================
 type Role = 'mteja' | 'muuzaji' | 'mmiliki'
 
@@ -49,16 +55,20 @@ const TYPE_ICON: Record<SearchType, React.ElementType> = {
 }
 
 // ==================================================================
-// Component
+// Component — ✅ React.memo inazuia re-render isiyo ya lazima
 // ==================================================================
-export default function TopBar({ role, onMenuClick }: TopBarProps) {
+function TopBarInner({ role, onMenuClick }: TopBarProps) {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
   const cart = useCart()
 
-  // ✅ Duka husika la mtumiaji aliyeingia
+  // ✅ Primitive values — sio object — kwa deps za hooks
+  const userId = user?.id
   const storeId = user?.store_id || undefined
 
+  // ------------------------------------------------------------------
+  // Local state
+  // ------------------------------------------------------------------
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [results, setResults] = useState<SearchResult[]>([])
@@ -80,57 +90,42 @@ export default function TopBar({ role, onMenuClick }: TopBarProps) {
   const cartRef = useRef<HTMLDivElement>(null)
   const profileRef = useRef<HTMLDivElement>(null)
 
+  // ✅ Ref kwa loadNotifications — inazuia useCallback dependency loop
+  const loadNotificationsRef = useRef<() => Promise<void>>(async () => {})
+
   // ------------------------------------------------------------------
   // Derived
   // ------------------------------------------------------------------
-  const initials = (user?.full_name || '?')
-    .split(' ')
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
+  const initials = useMemo(
+    () =>
+      (user?.full_name || '?')
+        .split(' ')
+        .map((n) => n[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase(),
+    [user?.full_name]
+  )
 
-  const unreadCount = notifList.filter((n) => !n.read).length
+  const unreadCount = useMemo(
+    () => notifList.filter((n) => !n.read).length,
+    [notifList]
+  )
 
-  // ✅ Scope ya search kulingana na role
-  const searchScope: SearchType[] =
-    role === 'mteja'
-      ? ['bidhaa']
-      : role === 'muuzaji'
-      ? ['bidhaa', 'mteja', 'order']
-      : ['bidhaa', 'mteja', 'order']
-
-  // ------------------------------------------------------------------
-  // Search — debounced, ✅ inachuja kwa duka husika
-  // ------------------------------------------------------------------
-  useEffect(() => {
-    if (!query.trim()) {
-      setResults([])
-      return
-    }
-    const t = setTimeout(async () => {
-      setSearchLoading(true)
-      try {
-        const r = await searchEverything(query, {
-          limit: 5,
-          store: storeId,          // ✅ chuja kwa duka la mtumiaji
-          scope: searchScope,      // ✅ chuja kwa role
-        })
-        setResults(r)
-      } catch {
-        setResults([])
-      } finally {
-        setSearchLoading(false)
-      }
-    }, 250)
-    return () => clearTimeout(t)
-  }, [query, storeId, searchScope])
+  // ✅ searchScope ni stable — sio array mpya kila render
+  const searchScope = useMemo<SearchType[]>(
+    () =>
+      role === 'mteja'
+        ? ['bidhaa']
+        : ['bidhaa', 'mteja', 'order'],
+    [role]
+  )
 
   // ------------------------------------------------------------------
-  // Load notifications — ✅ za mtumiaji husika tu
+  // 1. Notifications loader (stable kupitia useCallback)
   // ------------------------------------------------------------------
   const loadNotifications = useCallback(async () => {
-    if (!user?.id) {
+    if (!userId) {
       setNotifList([])
       return
     }
@@ -138,8 +133,8 @@ export default function TopBar({ role, onMenuClick }: TopBarProps) {
     try {
       const data = await notificationsApi.logs({
         limit: 20,
-        recipient: user.id,       // ✅ taarifa zake tu
-        store: storeId,           // ✅ au za duka lake (kama API inaunga mkono)
+        recipient: userId,
+        store: storeId,
       })
       setNotifList(data)
     } catch {
@@ -147,14 +142,59 @@ export default function TopBar({ role, onMenuClick }: TopBarProps) {
     } finally {
       setNotifLoading(false)
     }
-  }, [user?.id, storeId])
+  }, [userId, storeId])
 
+  // ✅ Sasisha ref kila loadNotifications inabadilika
   useEffect(() => {
-    if (user) loadNotifications()
-  }, [user, loadNotifications])
+    loadNotificationsRef.current = loadNotifications
+  }, [loadNotifications])
+
+  // ✅ Load notifications MARA MOJA tu user anapobadilika
+  // (sio kila render — userId ni primitive)
+  useEffect(() => {
+    if (userId) {
+      loadNotificationsRef.current()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
 
   // ------------------------------------------------------------------
-  // Outside click
+  // 2. Search — debounced, ina-run TU query inapobadilika
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    const trimmed = query.trim()
+    if (!trimmed) {
+      setResults([])
+      setSearchLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const t = setTimeout(async () => {
+      if (cancelled) return
+      setSearchLoading(true)
+      try {
+        const r = await searchEverything(trimmed, {
+          limit: 5,
+          store: storeId,
+          scope: searchScope,
+        })
+        if (!cancelled) setResults(r)
+      } catch {
+        if (!cancelled) setResults([])
+      } finally {
+        if (!cancelled) setSearchLoading(false)
+      }
+    }, 250)
+
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+  }, [query, storeId, searchScope])
+
+  // ------------------------------------------------------------------
+  // 3. Outside click
   // ------------------------------------------------------------------
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -172,7 +212,9 @@ export default function TopBar({ role, onMenuClick }: TopBarProps) {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  // Escape key
+  // ------------------------------------------------------------------
+  // 4. Escape key
+  // ------------------------------------------------------------------
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -190,52 +232,61 @@ export default function TopBar({ role, onMenuClick }: TopBarProps) {
   // ------------------------------------------------------------------
   // Handlers
   // ------------------------------------------------------------------
-  const handleSearchResult = (route: string) => {
-    navigate(route)
-    setQuery('')
-    setSearchOpen(false)
-  }
+  const handleSearchResult = useCallback(
+    (route: string) => {
+      navigate(route)
+      setQuery('')
+      setSearchOpen(false)
+    },
+    [navigate]
+  )
 
-  const toggleNotif = async () => {
-    setNotifOpen((v) => !v)
+  const toggleNotif = useCallback(async () => {
+    setNotifOpen((v) => {
+      const next = !v
+      if (next) loadNotificationsRef.current()
+      return next
+    })
     setCartOpen(false)
     setProfileOpen(false)
-    if (!notifOpen) await loadNotifications()
-  }
+  }, [])
 
-  const toggleCart = () => {
+  const toggleCart = useCallback(() => {
     setCartOpen((v) => !v)
     setNotifOpen(false)
     setProfileOpen(false)
-  }
+  }, [])
 
-  const toggleProfile = () => {
+  const toggleProfile = useCallback(() => {
     setProfileOpen((v) => !v)
     setNotifOpen(false)
     setCartOpen(false)
-  }
+  }, [])
 
-  const handleNotifClick = async (n: NotificationLog) => {
-    setNotifOpen(false)
-    if (!n.read) {
-      try {
-        await notificationsApi.markAsRead(n.id)
-        setNotifList((prev) =>
-          prev.map((x) => (x.id === n.id ? { ...x, read: true } : x))
-        )
-      } catch {
-        // endelea
+  const handleNotifClick = useCallback(
+    async (n: NotificationLog) => {
+      setNotifOpen(false)
+      if (!n.read) {
+        try {
+          await notificationsApi.markAsRead(n.id)
+          setNotifList((prev) =>
+            prev.map((x) => (x.id === n.id ? { ...x, read: true } : x))
+          )
+        } catch {
+          // endelea
+        }
       }
-    }
-    navigate(`/notifications/${n.id}`)
-  }
+      navigate(`/notifications/${n.id}`)
+    },
+    [navigate]
+  )
 
-  const handleOnaZote = () => {
+  const handleOnaZote = useCallback(() => {
     setNotifOpen(false)
     navigate(`/notifications`)
-  }
+  }, [navigate])
 
-  const handleMarkAllRead = async () => {
+  const handleMarkAllRead = useCallback(async () => {
     const unread = notifList.filter((n) => !n.read)
     if (unread.length === 0) return
     setMarkingAll(true)
@@ -247,48 +298,42 @@ export default function TopBar({ role, onMenuClick }: TopBarProps) {
     } finally {
       setMarkingAll(false)
     }
-  }
+  }, [notifList])
 
-  // ✅ Quotation inahitaji duka — hakikisha lipo
-  const goToQuotation = () => {
+  const goToQuotation = useCallback(() => {
     setCartOpen(false)
     if (!storeId) {
-      // mteja hana store_id — quotation ya kawaida
       navigate('/mteja/quotation')
       return
     }
-    // muuzaji anahitaji duka lake liendelee kwenye quotation
     navigate(`/mteja/quotation?store=${storeId}`)
-  }
+  }, [navigate, storeId])
 
-  const goToBidhaa = () => {
+  const goToBidhaa = useCallback(() => {
     setCartOpen(false)
     navigate(role === 'muuzaji' ? '/muuzaji' : '/mteja/bidhaa')
-  }
+  }, [navigate, role])
 
-  const goToProfile = () => {
+  const goToProfile = useCallback(() => {
     setProfileOpen(false)
     navigate(`/${role}/profile`)
-  }
+  }, [navigate, role])
 
-  const goToSettings = () => {
+  const goToSettings = useCallback(() => {
     setProfileOpen(false)
     navigate(`/${role}/settings`)
-  }
+  }, [navigate, role])
 
-  // ------------------------------------------------------------------
-  // Logout
-  // ------------------------------------------------------------------
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     setProfileOpen(false)
     setLogoutOpen(true)
-  }
+  }, [])
 
-  const confirmLogout = () => {
+  const confirmLogout = useCallback(() => {
     setLogoutOpen(false)
     logout()
     navigate('/login', { replace: true })
-  }
+  }, [logout, navigate])
 
   // ==================================================================
   // Render
@@ -750,3 +795,6 @@ export default function TopBar({ role, onMenuClick }: TopBarProps) {
     </header>
   )
 }
+
+// ✅ memo inazuia re-render kama props hazibadiliki
+export default memo(TopBarInner)

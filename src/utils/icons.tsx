@@ -14,6 +14,8 @@ const ICONS: Record<KundiBidhaa, React.ElementType> = {
   Zana: Wrench,
 }
 
-export function iconForKundi(kundi?: KundiBidhaa): React.ElementType {
-  return kundi ? ICONS[kundi] ?? Box : Box
+// ✅ Kubali string yoyote — itumike kwa data za API ambazo hazina type
+export function iconForKundi(kundi?: string | KundiBidhaa | null): React.ElementType {
+  if (!kundi) return Box
+  return ICONS[kundi as KundiBidhaa] ?? Box
 }

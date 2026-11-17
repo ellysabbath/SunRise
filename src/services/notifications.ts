@@ -40,6 +40,16 @@ export interface OTPRecord {
   created_at: string;
 }
 
+// ✅ Params type moja — tumia kwa logs() na list()
+export interface NotificationLogsParams {
+  channel?: NotificationChannel;
+  recipient?: string;
+  success?: boolean;
+  read?: boolean;
+  limit?: number;
+  store?: string;        // ✅ ongeza hii
+}
+
 // ==================================================================
 // API
 // ==================================================================
@@ -53,25 +63,13 @@ export const notificationsApi = {
   // ------------------------------------------------------------------
   // Logs (list + filter)
   // ------------------------------------------------------------------
-  logs: (params?: {
-    channel?: NotificationChannel;
-    recipient?: string;
-    success?: boolean;
-    read?: boolean;
-    limit?: number;
-  }) =>
+  logs: (params?: NotificationLogsParams) =>
     api
       .get<NotificationLog[]>("/notifications/logs/", { params })
       .then((r) => r.data),
 
   // Alias rahisi
-  list: (params?: {
-    channel?: NotificationChannel;
-    recipient?: string;
-    success?: boolean;
-    read?: boolean;
-    limit?: number;
-  }) =>
+  list: (params?: NotificationLogsParams) =>
     api
       .get<NotificationLog[]>("/notifications/logs/", { params })
       .then((r) => r.data),
@@ -96,13 +94,13 @@ export const notificationsApi = {
   // Mark ALL as read (bulk — PATCH kwa kila moja)
   // ------------------------------------------------------------------
   markAllRead: async (ids: string[]) => {
-    if (ids.length === 0) return { updated: 0 }
+    if (ids.length === 0) return { updated: 0 };
     await Promise.all(
       ids.map((id) =>
         api.patch(`/notifications/logs/${id}/`, { read: true })
       )
-    )
-    return { updated: ids.length }
+    );
+    return { updated: ids.length };
   },
 
   // ------------------------------------------------------------------
@@ -115,11 +113,11 @@ export const notificationsApi = {
   // Futa zote (DELETE kwa kila moja)
   // ------------------------------------------------------------------
   removeMany: async (ids: string[]) => {
-    if (ids.length === 0) return { deleted: 0 }
+    if (ids.length === 0) return { deleted: 0 };
     await Promise.all(
       ids.map((id) => api.delete(`/notifications/logs/${id}/`))
-    )
-    return { deleted: ids.length }
+    );
+    return { deleted: ids.length };
   },
 
   // ------------------------------------------------------------------

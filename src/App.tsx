@@ -56,11 +56,11 @@ import NotificationDetail from './pages/shared/NotificationDetail'
 import MyProfile from './pages/shared/MyProfile'
 import MySettings from './pages/shared/MySettings'
 
-// ---------- AUTH ----------
+// ---------- AUTH HOOK ----------
 import { useAuth } from './context/AuthContext'
 
 // ==================================================================
-// ProtectedRoute — inazuia watu wasioingia
+// ProtectedRoute — kwa routes zisizo na Layout (mfano top-level)
 // ==================================================================
 function ProtectedRoute({
   children,
@@ -71,7 +71,8 @@ function ProtectedRoute({
 }) {
   const { user, loading } = useAuth()
 
-  if (loading) {
+  // ✅ Onyesha spinner TU ikiwa bado hatujui user ni nani
+  if (loading && !user) {
     return (
       <div className="min-h-screen grid place-items-center bg-slate-50">
         <div className="text-center">
@@ -83,11 +84,7 @@ function ProtectedRoute({
   }
 
   if (!user) return <Navigate to="/login" replace />
-
-  if (allow && !allow.includes(user.role)) {
-    return <Navigate to="/" replace />
-  }
-
+  if (allow && !allow.includes(user.role)) return <Navigate to="/" replace />
   return <>{children}</>
 }
 
@@ -106,33 +103,11 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/reset-complete" element={<ResetComplete />} />
 
-      {/* ================= NOTIFICATIONS (SHARED) ================= */}
-      {/* ✅ Routes hizi zinafanya kazi kwa roles zote zilizoingia */}
-      <Route
-        path="/notifications"
-        element={
-          <ProtectedRoute>
-            <Notifications />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/notifications/:id"
-        element={
-          <ProtectedRoute>
-            <NotificationDetail />
-          </ProtectedRoute>
-        }
-      />
-
       {/* ================= MTEJA ================= */}
+      {/* ✅ Layout inajishughulikia yenyewe — hakuna ProtectedRoute nje */}
       <Route
         path="/mteja"
-        element={
-          <ProtectedRoute allow={['mteja', 'admin', 'mmiliki']}>
-            <Layout role="mteja" />
-          </ProtectedRoute>
-        }
+        element={<Layout role="mteja" allow={['mteja', 'admin', 'mmiliki']} />}
       >
         <Route index element={<MtejaHome />} />
         <Route path="bidhaa" element={<MtejaBidhaa />} />
@@ -150,9 +125,10 @@ export default function App() {
       <Route
         path="/muuzaji"
         element={
-          <ProtectedRoute allow={['muuzaji', 'mhazini', 'admin', 'mmiliki']}>
-            <Layout role="muuzaji" />
-          </ProtectedRoute>
+          <Layout
+            role="muuzaji"
+            allow={['muuzaji', 'mhazini', 'admin', 'mmiliki']}
+          />
         }
       >
         <Route index element={<MuuzajiPOS />} />
@@ -162,8 +138,8 @@ export default function App() {
         <Route path="wateja" element={<MuuzajiWateja />} />
         <Route path="carts" element={<MuuzajiCarts />} />
         <Route path="ripoti" element={<MuuzajiRipoti />} />
-<Route path="ripoti-bidhaa" element={<MuuzajiRipotiBidhaa />} />
-<Route path="store-manage" element={<MuuzajiStoreManage />} />
+        <Route path="ripoti-bidhaa" element={<MuuzajiRipotiBidhaa />} />
+        <Route path="store-manage" element={<MuuzajiStoreManage />} />
         <Route path="matumizi" element={<MuuzajiMatumizi />} />
         <Route path="mshahara" element={<MuuzajiMshahara />} />
         <Route path="profile" element={<MyProfile role="muuzaji" />} />
@@ -175,11 +151,7 @@ export default function App() {
       {/* ================= MMILIKI ================= */}
       <Route
         path="/mmiliki"
-        element={
-          <ProtectedRoute allow={['mmiliki', 'admin']}>
-            <Layout role="mmiliki" />
-          </ProtectedRoute>
-        }
+        element={<Layout role="mmiliki" allow={['mmiliki', 'admin']} />}
       >
         <Route index element={<MmilikiDashboard />} />
         <Route path="maduka" element={<MmilikiMaduka />} />
@@ -203,11 +175,7 @@ export default function App() {
       {/* ================= ADMIN ================= */}
       <Route
         path="/admin"
-        element={
-          <ProtectedRoute allow={['admin']}>
-            <Layout role="mmiliki" />
-          </ProtectedRoute>
-        }
+        element={<Layout role="mmiliki" allow={['admin']} />}
       >
         <Route index element={<Navigate to="uingiza" replace />} />
         <Route path="uingiza" element={<UingizaVifaa role="admin" />} />

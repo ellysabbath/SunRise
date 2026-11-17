@@ -1,9 +1,9 @@
-import { useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   Home, Package, ShoppingCart, Users, Store, Wallet, TrendingUp,
   HandCoins, Receipt, FileText, X, ShoppingBag, UserPlus, Bell,
-  BarChart3, Truck, PackagePlus, ArrowBigLeft, HouseCog,
+  BarChart3, Truck, PackagePlus, HouseCog,
   HouseCogIcon, PackageX, CircleDollarSign, Banknote,
   PersonStanding, CogIcon, LogOut, AlertTriangle,
 } from 'lucide-react'
@@ -77,6 +77,7 @@ interface SidebarProps {
 
 export default function Sidebar({ role, open, onClose }: SidebarProps) {
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const { user, logout } = useAuth()
   const [logoutOpen, setLogoutOpen] = useState(false)
 
@@ -85,18 +86,20 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
   const roleLabel = roleLabels[role] ?? 'Dashboard'
 
   // ------------------------------------------------------------------
+  // ✅ Funga sidebar kila route inabadilika (mobile tu)
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    onClose()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname])
+
+  // ------------------------------------------------------------------
   // Logout
   // ------------------------------------------------------------------
   const confirmLogout = () => {
     setLogoutOpen(false)
     logout()
     navigate('/login', { replace: true })
-  }
-
-  // ✅ Funga sidebar baada ya navigation (mobile tu)
-  const handleNavigate = () => {
-    // tumia setTimeout ili navigation ianze kwanza
-    setTimeout(() => onClose(), 0)
   }
 
   // ==================================================================
@@ -160,7 +163,7 @@ export default function Sidebar({ role, open, onClose }: SidebarProps) {
               key={n.to}
               to={n.to}
               end={n.to === `/${role}`}
-              onClick={handleNavigate}   // ✅ navigation kwanza, kisha funga
+              // ❌ ondoa onClick={handleNavigate}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
                   isActive
