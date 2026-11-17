@@ -2,8 +2,22 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   KeyRound, Phone, ArrowLeft, AlertTriangle, CheckCircle2,
-  ShieldCheck, Smartphone,
+  ShieldCheck, Smartphone, Loader2,
 } from 'lucide-react'
+import { authApi } from '../../services/auth' // ← rekebisha njia kulingana na mahali faili la authApi lilipo
+
+// Kutoa ujumbe wa error kutoka backend (axios)
+function getErrorMessage(err: unknown, fallback: string): string {
+  const e = err as {
+    response?: { data?: { detail?: string; message?: string; error?: string } }
+  }
+  return (
+    e?.response?.data?.detail ||
+    e?.response?.data?.message ||
+    e?.response?.data?.error ||
+    fallback
+  )
+}
 
 export default function ForgotPassword() {
   const navigate = useNavigate()
@@ -11,21 +25,64 @@ export default function ForgotPassword() {
   const [otpSent, setOtpSent] = useState(false)
   const [otp, setOtp] = useState('')
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const handleSendOtp = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!/^0[67]\d{2}-?\d{3}-?\d{3}$/.test(simu.replace(/\s/g, ''))) {
-      return setError('Weka namba sahihi ya simu')
+  // Namba safi (bila nafasi na dashes) inayotumwa kwa backend
+  const cleanPhone = simu.replace(/[\s-]/g, '')
+
+  const requestOtp = async () => {
+    if (!/^0[67]\d{8}$/.test(cleanPhone)) {
+      setError('Weka namba sahihi ya simu')
+      return false
     }
     setError('')
-    setOtpSent(true)
+    setInfo('')
+    setLoading(true)
+    try {
+      await authApi.requestOtp(cleanPhone, 'reset', 'sms')
+      return true
+    } catch (err) {
+      setError(getErrorMessage(err, 'Imeshindwa kutuma OTP. Jaribu tena.'))
+      return false
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleVerifyOtp = (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (loading) return
+    if (await requestOtp()) setOtpSent(true)
+  }
+
+  const handleResend = async () => {
+    if (loading) return
+    if (await requestOtp()) {
+      setOtp('')
+      setInfo('OTP mpya imetumwa')
+    }
+  }
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (loading) return
     if (otp.length !== 6) return setError('OTP inapaswa kuwa tarakimu 6')
+
     setError('')
-    navigate('/reset-password')
+    setInfo('')
+    setLoading(true)
+    try {
+      const data = await authApi.verifyOtp(cleanPhone, otp)
+      // Peleka phone, code na jibu la backend (mfano token) kwenye ukurasa wa reset
+      navigate('/reset-password', {
+        state: { phone: cleanPhone, code: otp, verified: data },
+      })
+    } catch (err) {
+      setError(getErrorMessage(err, 'OTP si sahihi au imeisha muda'))
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -63,7 +120,8 @@ export default function ForgotPassword() {
                     onChange={(e) => setSimu(e.target.value)}
                     placeholder="0754-123-456"
                     inputMode="tel"
-                    className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm"
+                    disabled={loading}
+                    className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm disabled:bg-slate-50"
                   />
                 </div>
               </div>
@@ -77,10 +135,11 @@ export default function ForgotPassword() {
 
               <button
                 type="submit"
-                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700"
+                disabled={loading}
+                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <Smartphone size={14} />
-                Tuma OTP
+                {loading ? <Loader2 size={14} className="animate-spin" /> : <Smartphone size={14} />}
+                {loading ? 'Inatuma...' : 'Tuma OTP'}
               </button>
             </form>
           ) : (
@@ -100,9 +159,18 @@ export default function ForgotPassword() {
                   placeholder="123456"
                   inputMode="numeric"
                   maxLength={6}
-                  className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm font-mono text-center text-lg tracking-widest"
+                  autoFocus
+                  disabled={loading}
+                  className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none font-mono text-center text-lg tracking-widest disabled:bg-slate-50"
                 />
               </div>
+
+              {info && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-50 text-emerald-700 text-sm">
+                  <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+                  {info}
+                </div>
+              )}
 
               {error && (
                 <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
@@ -113,19 +181,36 @@ export default function ForgotPassword() {
 
               <button
                 type="submit"
-                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700"
+                disabled={loading}
+                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <CheckCircle2 size={14} />
-                Thibitisha OTP
+                {loading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                {loading ? 'Inathibitisha...' : 'Thibitisha OTP'}
               </button>
 
-              <button
-                type="button"
-                onClick={() => setOtpSent(false)}
-                className="w-full text-xs text-slate-500 hover:text-brand-600"
-              >
-                Badilisha namba ya simu
-              </button>
+              <div className="flex items-center justify-between text-xs">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    setOtpSent(false)
+                    setOtp('')
+                    setError('')
+                    setInfo('')
+                  }}
+                  className="text-slate-500 hover:text-brand-600 disabled:opacity-60"
+                >
+                  Badilisha namba ya simu
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={handleResend}
+                  className="text-brand-600 hover:underline font-medium disabled:opacity-60"
+                >
+                  Tuma tena OTP
+                </button>
+              </div>
             </form>
           )}
 

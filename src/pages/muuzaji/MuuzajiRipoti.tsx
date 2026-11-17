@@ -4,15 +4,15 @@ import {
   AlertTriangle, CheckCircle2, Download,
   FileText, Search, Trash2, X, Eye, Plus,
   Clock, RefreshCw, Loader2, ArrowDownToLine,
-  Table as TableIcon, File, Sheet, HelpCircle,
-  Store, User, Lock,
+  Table as TableIcon, File, HelpCircle,
+  Store, User, Lock, Calendar, Filter,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid,
 } from 'recharts'
 import { useAuth } from '../../context/AuthContext'
-import { ordersApi } from '../../services/orders'
+import { ordersApi, type Order as ApiOrder } from '../../services/orders'
 import { productsApi, type Product } from '../../services/products'
 import { customersApi, type Customer } from '../../services/customers'
 import { inventoryApi, type StockLevel } from '../../services/inventory'
@@ -26,33 +26,55 @@ import { formatTsh, formatDate } from '../../lib/format'
 import { SkeletonLine } from '../../components/Skeleton'
 
 // ==================================================================
-// Types za ndani
+// Local types — tunatumia ApiOrder kutoka services
 // ==================================================================
-interface OrderPayment {
-  id: string
-  amount: string
-  status: 'inasubiri' | 'imethibitishwa' | 'imekataliwa'
+type Order = ApiOrder
+
+// ==================================================================
+// Date filter
+// ==================================================================
+type FilterMode = 'zote' | 'mwaka' | 'mwezi' | 'wiki' | 'siku'
+
+interface DateFilter {
+  mode: FilterMode
+  mwaka: number
+  mwezi: number
+  wiki: number
+  siku: string
 }
 
-interface OrderItemLocal {
-  id: string
-  quantity: string
-  unit_price: string
-  unit_cost: string
-  subtotal: string
+function getMwakaWaSasa() {
+  return new Date().getFullYear()
+}
+function getMweziWaSasa() {
+  return new Date().getMonth() + 1
+}
+function getWikiYaSasa() {
+  const d = new Date()
+  const start = new Date(d.getFullYear(), 0, 1)
+  const days = Math.floor((d.getTime() - start.getTime()) / 86400000)
+  return Math.ceil((days + start.getDay() + 1) / 7)
+}
+function getSikuYaSasa() {
+  return new Date().toISOString().slice(0, 10)
 }
 
-interface Order {
-  id: string
-  customer: string
-  customer_name: string
-  store: string
-  store_name?: string
-  order_date: string
-  status: 'inasubiri_malipo' | 'imekamilika' | 'imekataliwa'
-  total: string
-  items: OrderItemLocal[]
-  payments: OrderPayment[]
+function ikoNdaniYaFilter(tarehe: string, filter: DateFilter): boolean {
+  if (!tarehe) return false
+  const t = new Date(tarehe)
+  if (isNaN(t.getTime())) return false
+  if (filter.mode === 'zote') return true
+  if (filter.mode === 'mwaka') return t.getFullYear() === filter.mwaka
+  if (filter.mode === 'mwezi')
+    return t.getFullYear() === filter.mwaka && t.getMonth() + 1 === filter.mwezi
+  if (filter.mode === 'wiki') {
+    if (t.getFullYear() !== filter.mwaka) return false
+    const start = new Date(filter.mwaka, 0, 1)
+    const days = Math.floor((t.getTime() - start.getTime()) / 86400000)
+    return Math.ceil((days + start.getDay() + 1) / 7) === filter.wiki
+  }
+  if (filter.mode === 'siku') return tarehe.slice(0, 10) === filter.siku
+  return true
 }
 
 // ==================================================================
@@ -71,12 +93,11 @@ const AINA_DOC_META: Record<
 }
 
 const FORMAT_META: Record<
-  'pdf' | 'csv' | 'excel',
+  'pdf' | 'csv',
   { Icon: React.ElementType; tone: string }
 > = {
   pdf: { Icon: File, tone: 'text-red-600' },
   csv: { Icon: TableIcon, tone: 'text-blue-600' },
-  excel: { Icon: Sheet, tone: 'text-emerald-600' },
 }
 
 const HALI_DOC_META: Record<
@@ -85,7 +106,11 @@ const HALI_DOC_META: Record<
 > = {
   tayari: { label: 'Tayari', Icon: CheckCircle2, tone: 'text-emerald-600' },
   inasindika: { label: 'Inasindika', Icon: Clock, tone: 'text-amber-600' },
-  imemalizika: { label: 'Imemalizika', Icon: CheckCircle2, tone: 'text-slate-600' },
+  imemalizika: {
+    label: 'Imemalizika',
+    Icon: CheckCircle2,
+    tone: 'text-slate-600',
+  },
 }
 
 type Tab = 'mauzo' | 'stoki' | 'wateja' | 'documents'
@@ -126,10 +151,7 @@ function Toast({
         <AlertTriangle size={16} className="shrink-0" />
       )}
       <div className="flex-1">{message}</div>
-      <button
-        onClick={onClose}
-        className="p-0.5 rounded hover:bg-white/20"
-      >
+      <button onClick={onClose} className="p-0.5 rounded hover:bg-white/20">
         <X size={14} />
       </button>
     </div>
@@ -161,7 +183,6 @@ function ConfirmModal({
   onCancel: () => void
 }) {
   if (!open) return null
-
   const toneMap = {
     danger: {
       iconBg: 'bg-red-50',
@@ -230,15 +251,170 @@ function ConfirmModal({
 }
 
 // ==================================================================
+// DateFilterBar
+// ==================================================================
+function DateFilterBar({
+  filter,
+  onChange,
+}: {
+  filter: DateFilter
+  onChange: (f: DateFilter) => void
+}) {
+  const modeLabel: Record<FilterMode, string> = {
+    zote: 'Zote',
+    mwaka: `Mwaka ${filter.mwaka}`,
+    mwezi: `Mwezi ${filter.mwezi}/${filter.mwaka}`,
+    wiki: `Wiki ${filter.wiki} (${filter.mwaka})`,
+    siku: filter.siku,
+  }
+  const miaka = Array.from({ length: 5 }, (_, i) => getMwakaWaSasa() - i)
+  const miezi = [
+    'Januari', 'Februari', 'Machi', 'Aprili', 'Mei', 'Juni',
+    'Julai', 'Agosti', 'Septemba', 'Oktoba', 'Novemba', 'Desemba',
+  ]
+  const wiki = Array.from({ length: 52 }, (_, i) => i + 1)
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          <Filter size={14} className="text-slate-500" />
+          <span className="text-xs font-semibold text-slate-600 mr-1">
+            Kipindi:
+          </span>
+        </div>
+        <button
+          onClick={() => onChange({ ...filter, mode: 'zote' })}
+          className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${
+            filter.mode === 'zote'
+              ? 'bg-brand-600 text-white border-brand-600 font-semibold'
+              : 'bg-white border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Zote
+        </button>
+        <button
+          onClick={() =>
+            onChange({ ...filter, mode: 'mwaka', mwaka: filter.mwaka })
+          }
+          className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${
+            filter.mode === 'mwaka'
+              ? 'bg-brand-600 text-white border-brand-600 font-semibold'
+              : 'bg-white border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Mwaka
+        </button>
+        <button
+          onClick={() =>
+            onChange({ ...filter, mode: 'mwezi', mwezi: filter.mwezi })
+          }
+          className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${
+            filter.mode === 'mwezi'
+              ? 'bg-brand-600 text-white border-brand-600 font-semibold'
+              : 'bg-white border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Mwezi
+        </button>
+        <button
+          onClick={() =>
+            onChange({ ...filter, mode: 'wiki', wiki: filter.wiki })
+          }
+          className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${
+            filter.mode === 'wiki'
+              ? 'bg-brand-600 text-white border-brand-600 font-semibold'
+              : 'bg-white border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Wiki
+        </button>
+        <button
+          onClick={() =>
+            onChange({ ...filter, mode: 'siku', siku: filter.siku })
+          }
+          className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${
+            filter.mode === 'siku'
+              ? 'bg-brand-600 text-white border-brand-600 font-semibold'
+              : 'bg-white border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Siku
+        </button>
+        <div className="ml-auto text-xs text-slate-500 flex items-center gap-1">
+          <Calendar size={12} />
+          {modeLabel[filter.mode]}
+        </div>
+      </div>
+
+      {filter.mode !== 'zote' && (
+        <div className="mt-2 pt-2 border-t border-slate-100 flex flex-wrap gap-2 items-center">
+          <select
+            value={filter.mwaka}
+            onChange={(e) =>
+              onChange({ ...filter, mwaka: Number(e.target.value) })
+            }
+            className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:border-brand-500 outline-none"
+          >
+            {miaka.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          {filter.mode === 'mwezi' && (
+            <select
+              value={filter.mwezi}
+              onChange={(e) =>
+                onChange({ ...filter, mwezi: Number(e.target.value) })
+              }
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:border-brand-500 outline-none"
+            >
+              {miezi.map((m, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          )}
+          {filter.mode === 'wiki' && (
+            <select
+              value={filter.wiki}
+              onChange={(e) =>
+                onChange({ ...filter, wiki: Number(e.target.value) })
+              }
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:border-brand-500 outline-none"
+            >
+              {wiki.map((w) => (
+                <option key={w} value={w}>
+                  Wiki {w}
+                </option>
+              ))}
+            </select>
+          )}
+          {filter.mode === 'siku' && (
+            <input
+              type="date"
+              value={filter.siku}
+              onChange={(e) =>
+                onChange({ ...filter, siku: e.target.value })
+              }
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:border-brand-500 outline-none"
+            />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ==================================================================
 // Page
 // ==================================================================
 export default function MuuzajiRipoti() {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('mauzo')
 
-  // ================================================================
-  // ✅ DUKA HUSIKA + MTU HUSIKA
-  // ================================================================
   const storeId = user?.store_id || undefined
   const userId = user?.id || undefined
 
@@ -252,25 +428,31 @@ export default function MuuzajiRipoti() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  const [filter, setFilter] = useState<DateFilter>({
+    mode: 'mwezi',
+    mwaka: getMwakaWaSasa(),
+    mwezi: getMweziWaSasa(),
+    wiki: getWikiYaSasa(),
+    siku: getSikuYaSasa(),
+  })
+
   // ------------------------------------------------------------------
-  // Load — ✅ inachuja kwa duka husika
+  // Load
   // ------------------------------------------------------------------
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
 
-    // ✅ Hakikisha mtumiaji ana duka
     if (!storeId) {
       setError('Hujapangiwa duka. Wasiliana na mmiliki.')
       setLoading(false)
       return
     }
 
-    // ✅ Role guard
     if (
-      user.role !== 'muuzaji' &&
-      user.role !== 'mmiliki' &&
-      user.role !== 'admin'
+      user?.role !== 'muuzaji' &&
+      user?.role !== 'mmiliki' &&
+      user?.role !== 'admin'
     ) {
       setError('Huna ruhusa ya kuona ripoti za duka.')
       setLoading(false)
@@ -279,18 +461,16 @@ export default function MuuzajiRipoti() {
 
     try {
       const results = await Promise.allSettled([
-        ordersApi.list({ store: storeId }),                        // ✅ orders za duka
-        productsApi.list(storeId),                                  // ✅ bidhaa za duka
-        customersApi.list({ store: storeId }),                      // ✅ wateja wa duka
-        inventoryApi.stockLevels({ store: storeId }),               // ✅ stoki ya duka
-        documentsApi.list({ store: storeId }),                      // ✅ documents za duka
-        storesApi.get(storeId),                                     // ✅ duka moja
+        ordersApi.list({ store: storeId }),
+        productsApi.list(storeId),
+        customersApi.list({ store: storeId }),
+        inventoryApi.stockLevels({ store: storeId }),
+        documentsApi.list({ store: storeId }),
+        storesApi.get(storeId),
       ])
 
       setOrders(
-        results[0].status === 'fulfilled'
-          ? (results[0].value as Order[])
-          : []
+        results[0].status === 'fulfilled' ? results[0].value : []
       )
       setProducts(
         results[1].status === 'fulfilled' ? results[1].value : []
@@ -330,22 +510,21 @@ export default function MuuzajiRipoti() {
   }, [load])
 
   // ------------------------------------------------------------------
-  // ✅ Defense in depth: chuja tena kwa usalama
+  // Filtered
   // ------------------------------------------------------------------
   const myOrders = useMemo(() => {
     if (!storeId) return []
-    return orders.filter((o) => !o.store || o.store === storeId)
-  }, [orders, storeId])
-
-  const myCustomers = useMemo(() => {
-    // customersApi.list({ store }) tayari imechuja — hii ni ulinzi wa ziada
-    return customers
-  }, [customers])
+    return orders
+      .filter((o) => !o.store || o.store === storeId)
+      .filter((o) => ikoNdaniYaFilter(o.order_date, filter))
+  }, [orders, storeId, filter])
 
   const myDocuments = useMemo(() => {
     if (!storeId) return []
-    return documents.filter((d) => !d.store_id || d.store_id === storeId)
-  }, [documents, storeId])
+    return documents
+      .filter((d) => !d.store || d.store === storeId)
+      .filter((d) => ikoNdaniYaFilter(d.created_at, filter))
+  }, [documents, storeId, filter])
 
   return (
     <div className="space-y-5">
@@ -354,10 +533,7 @@ export default function MuuzajiRipoti() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
             <BarChart3 size={26} className="text-brand-600" /> Ripoti za Duka
-            <span
-              className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded"
-              title="Ripoti za duka lako pekee"
-            >
+            <span className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
               <Lock size={10} /> Duka Lako
             </span>
           </h1>
@@ -378,8 +554,7 @@ export default function MuuzajiRipoti() {
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 text-amber-600">
-                <AlertTriangle size={14} />
-                Hujapangiwa duka
+                <AlertTriangle size={14} /> Hujapangiwa duka
               </span>
             )}
           </div>
@@ -393,6 +568,8 @@ export default function MuuzajiRipoti() {
           Sasisha
         </button>
       </div>
+
+      <DateFilterBar filter={filter} onChange={setFilter} />
 
       {/* Tabs */}
       <div className="flex gap-2 overflow-x-auto">
@@ -421,7 +598,6 @@ export default function MuuzajiRipoti() {
         ))}
       </div>
 
-      {/* Error */}
       {error && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -432,7 +608,6 @@ export default function MuuzajiRipoti() {
         </div>
       )}
 
-      {/* Content */}
       {tab === 'mauzo' && (
         <RipotiMauzoTab orders={myOrders} loading={loading} />
       )}
@@ -445,7 +620,7 @@ export default function MuuzajiRipoti() {
       )}
       {tab === 'wateja' && (
         <RipotiWatejaTab
-          customers={myCustomers}
+          customers={customers}
           orders={myOrders}
           loading={loading}
         />
@@ -464,7 +639,7 @@ export default function MuuzajiRipoti() {
 }
 
 // ==================================================================
-// Ripoti ya Mauzo (haijabadilika — inapokea `orders` tayari filtered)
+// RipotiMauzoTab
 // ==================================================================
 function RipotiMauzoTab({
   orders,
@@ -473,7 +648,6 @@ function RipotiMauzoTab({
   orders: Order[]
   loading: boolean
 }) {
-  // ... (code ile ile — haijabadilika)
   const ripotiKwaTarehe = useMemo(() => {
     const map = new Map<
       string,
@@ -482,13 +656,12 @@ function RipotiMauzoTab({
     for (const o of orders) {
       const tarehe = o.order_date?.slice(0, 10) || '—'
       const jumla = parseFloat(o.total || '0')
-      const cogs = o.items.reduce(
+      const cogs = (o.items || []).reduce(
         (s, it) =>
           s + parseFloat(it.unit_cost || '0') * parseFloat(it.quantity || '0'),
         0
       )
       const faida = jumla - cogs
-
       const ex = map.get(tarehe)
       if (ex) {
         ex.mauzo += jumla
@@ -582,7 +755,7 @@ function RipotiMauzoTab({
             </div>
           ) : ripotiKwaTarehe.length === 0 ? (
             <div className="h-full grid place-items-center text-sm text-slate-500">
-              Hakuna mauzo bado kwenye duka lako
+              Hakuna mauzo kwa kipindi hiki
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
@@ -634,6 +807,10 @@ function RipotiMauzoTab({
                 <TableRowSkeleton key={i} cols={4} />
               ))}
             </div>
+          ) : ripotiKwaTarehe.length === 0 ? (
+            <div className="p-8 text-center text-sm text-slate-500">
+              Hakuna mauzo kwa kipindi hiki
+            </div>
           ) : (
             <table className="w-full text-sm min-w-[520px]">
               <thead className="bg-slate-50 text-left text-slate-500">
@@ -679,7 +856,7 @@ function RipotiMauzoTab({
 }
 
 // ==================================================================
-// Ripoti ya Stoki (haijabadilika — inapokea data tayari filtered)
+// RipotiStokiTab
 // ==================================================================
 function RipotiStokiTab({
   products,
@@ -690,7 +867,6 @@ function RipotiStokiTab({
   stockLevels: StockLevel[]
   loading: boolean
 }) {
-  // ... (code ile ile — haijabadilika)
   const ripotiStoki = useMemo(() => {
     return products.map((b) => {
       const level = stockLevels.find((s) => s.product === b.id)
@@ -829,7 +1005,7 @@ function RipotiStokiTab({
 }
 
 // ==================================================================
-// Ripoti ya Wateja (inapokea customers tayari filtered)
+// RipotiWatejaTab
 // ==================================================================
 function RipotiWatejaTab({
   customers,
@@ -848,7 +1024,7 @@ function RipotiWatejaTab({
         0
       )
       const deni = ordersZake.reduce((s, o) => {
-        const confirmed = o.payments
+        const confirmed = (o.payments || [])
           .filter((p) => p.status === 'imethibitishwa')
           .reduce((a, p) => a + parseFloat(p.amount || '0'), 0)
         return s + Math.max(parseFloat(o.total || '0') - confirmed, 0)
@@ -965,11 +1141,10 @@ function RipotiWatejaTab({
 }
 
 // ==================================================================
-// Documents Tab — ✅ inachuja kwa duka + mtu
+// DocumentsTab
 // ==================================================================
 function DocumentsTab({
   storeId,
-  userId,
   documents,
   setDocuments,
   loading,
@@ -986,10 +1161,8 @@ function DocumentsTab({
   const [zalisha, setZalisha] = useState(false)
   const [generating, setGenerating] = useState<AinaDocument | null>(null)
   const [localLoading, setLocalLoading] = useState(false)
-
   const [confirmDelete, setConfirmDelete] = useState<DocumentMeta | null>(null)
   const [deleting, setDeleting] = useState(false)
-
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
   const filtered = useMemo(() => {
@@ -1022,7 +1195,8 @@ function DocumentsTab({
       setDocuments(docs)
     } catch (err: any) {
       setToast({
-        msg: err?.response?.data?.detail || 'Imeshindikana kupata documents.',
+        msg:
+          err?.response?.data?.detail || 'Imeshindikana kupata documents.',
         ok: false,
       })
     } finally {
@@ -1040,7 +1214,7 @@ function DocumentsTab({
       const doc = await documentsApi.generate({
         aina,
         format: 'pdf',
-        store_id: storeId,    // ✅ duka husika
+        store_id: storeId,
       })
       setDocuments((prev) => [doc, ...prev])
       setZalisha(false)
@@ -1062,8 +1236,8 @@ function DocumentsTab({
   const handleFuta = async () => {
     if (!confirmDelete || !storeId) return
 
-    // ✅ Ulinzi: document lazima iwe ya duka hili
-    if (confirmDelete.store_id && confirmDelete.store_id !== storeId) {
+    // ✅ d.store (sio d.store_id)
+    if (confirmDelete.store && confirmDelete.store !== storeId) {
       setToast({ msg: 'Document si ya duka lako.', ok: false })
       setConfirmDelete(null)
       return
@@ -1285,7 +1459,6 @@ function DocumentsTab({
         <DocumentDetailModal
           doc={selected}
           storeId={storeId}
-          userId={userId}
           onClose={() => setSelected(null)}
         />
       )}
@@ -1372,17 +1545,15 @@ function DocumentsTab({
 }
 
 // ==================================================================
-// Document Detail Modal — ✅ inathibitisha ownership
+// DocumentDetailModal
 // ==================================================================
 function DocumentDetailModal({
   doc,
   storeId,
-  userId,
   onClose,
 }: {
   doc: DocumentMeta
   storeId?: string
-  userId?: string
   onClose: () => void
 }) {
   const [downloading, setDownloading] = useState(false)
@@ -1394,16 +1565,14 @@ function DocumentDetailModal({
   const hali = HALI_DOC_META[doc.hali]
   const data = doc.data_snapshot || {}
 
-  // ✅ Ulinzi: document lazima iwe ya duka hili
-  const isOwned = !doc.store_id || doc.store_id === storeId
+  // ✅ doc.store (sio doc.store_id)
+  const isOwned = !doc.store || doc.store === storeId
 
   const handleDownload = async () => {
-    // ✅ Ulinzi: usiruhusu kupakua document ya duka lingine
     if (!isOwned) {
       setToast({ msg: 'Document si ya duka lako.', ok: false })
       return
     }
-
     setDownloading(true)
     setDownloadError('')
     try {
@@ -1411,11 +1580,7 @@ function DocumentDetailModal({
         doc.format === 'csv'
           ? await documentsApi.downloadCsv(doc.id)
           : await documentsApi.downloadPdf(doc.id)
-
-      if (!blob || blob.size === 0) {
-        throw new Error('Faili ni tupu')
-      }
-
+      if (!blob || blob.size === 0) throw new Error('Faili ni tupu')
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -1424,25 +1589,20 @@ function DocumentDetailModal({
       a.click()
       document.body.removeChild(a)
       setTimeout(() => URL.revokeObjectURL(url), 1000)
-
       setToast({ msg: 'Faili imepakuliwa.', ok: true })
     } catch (err: any) {
       let msg = 'Imeshindikana kupakua faili.'
-
       if (err?.response?.data instanceof Blob) {
         try {
           const text = await err.response.data.text()
           const parsed = JSON.parse(text)
           msg = parsed.detail || msg
-        } catch {
-          // ignore
-        }
+        } catch {}
       } else if (err?.response?.data?.detail) {
         msg = err.response.data.detail
       } else if (err?.message) {
         msg = err.message
       }
-
       setDownloadError(msg)
       setToast({ msg, ok: false })
     } finally {
@@ -1455,22 +1615,10 @@ function DocumentDetailModal({
       return (
         <div className="space-y-1.5">
           <Row label="Mauzo" value={formatTsh(data.mauzo || 0)} />
-          <Row
-            label="COGS"
-            value={formatTsh(data.cogs || 0)}
-            tone="text-amber-700"
-          />
-          <Row
-            label="Faida"
-            value={formatTsh(data.faida || 0)}
-            tone="text-emerald-700"
-            bold
-          />
+          <Row label="COGS" value={formatTsh(data.cogs || 0)} tone="text-amber-700" />
+          <Row label="Faida" value={formatTsh(data.faida || 0)} tone="text-emerald-700" bold />
           <Row label="Orders" value={String(data.orders || 0)} />
-          <Row
-            label="Wastani/Order"
-            value={formatTsh(data.wastani_kwa_order || 0)}
-          />
+          <Row label="Wastani/Order" value={formatTsh(data.wastani_kwa_order || 0)} />
         </div>
       )
     }
@@ -1478,20 +1626,9 @@ function DocumentDetailModal({
       return (
         <div className="space-y-1.5">
           <Row label="Bidhaa Zote" value={String(data.bidhaa_zote || 0)} />
-          <Row
-            label="Stoki Jumla"
-            value={`${(data.stoki_jumla || 0).toLocaleString()} pcs`}
-          />
-          <Row
-            label="Zimeisha"
-            value={String(data.zimeisha || 0)}
-            tone="text-red-600"
-          />
-          <Row
-            label="Zinaribia"
-            value={String(data.zinaribia || 0)}
-            tone="text-amber-600"
-          />
+          <Row label="Stoki Jumla" value={`${(data.stoki_jumla || 0).toLocaleString()} pcs`} />
+          <Row label="Zimeisha" value={String(data.zimeisha || 0)} tone="text-red-600" />
+          <Row label="Zinaribia" value={String(data.zinaribia || 0)} tone="text-amber-600" />
           <Row label="Thamani" value={formatTsh(data.thamani || 0)} bold />
         </div>
       )
@@ -1500,86 +1637,38 @@ function DocumentDetailModal({
       return (
         <div className="space-y-1.5">
           <Row label="Wateja Wote" value={String(data.wateja_wote || 0)} />
-          <Row
-            label="Manunuzi Jumla"
-            value={formatTsh(data.manunuzi_jumla || 0)}
-            tone="text-emerald-700"
-          />
-          <Row
-            label="Deni Jumla"
-            value={formatTsh(data.deni_jumla || 0)}
-            tone="text-red-600"
-            bold
-          />
+          <Row label="Manunuzi Jumla" value={formatTsh(data.manunuzi_jumla || 0)} tone="text-emerald-700" />
+          <Row label="Deni Jumla" value={formatTsh(data.deni_jumla || 0)} tone="text-red-600" bold />
         </div>
       )
     }
     if (doc.aina === 'madeni') {
       return (
         <div className="space-y-1.5">
-          <Row
-            label="Orders za Deni"
-            value={String(data.orders_deni || 0)}
-          />
-          <Row
-            label="Deni Jumla"
-            value={formatTsh(data.deni_jumla || 0)}
-            tone="text-red-600"
-            bold
-          />
+          <Row label="Orders za Deni" value={String(data.orders_deni || 0)} />
+          <Row label="Deni Jumla" value={formatTsh(data.deni_jumla || 0)} tone="text-red-600" bold />
         </div>
       )
     }
     if (doc.aina === 'gharama') {
       return (
         <div className="space-y-1.5">
-          <Row
-            label="Opex"
-            value={formatTsh(data.opex || 0)}
-            tone="text-orange-700"
-          />
-          <Row
-            label="Mishahara"
-            value={formatTsh(data.mishahara || 0)}
-            tone="text-purple-700"
-          />
-          <Row
-            label="Gharama Zote"
-            value={formatTsh(data.gharama_jumla || 0)}
-            tone="text-red-600"
-            bold
-          />
+          <Row label="Opex" value={formatTsh(data.opex || 0)} tone="text-orange-700" />
+          <Row label="Mishahara" value={formatTsh(data.mishahara || 0)} tone="text-purple-700" />
+          <Row label="Gharama Zote" value={formatTsh(data.gharama_jumla || 0)} tone="text-red-600" bold />
         </div>
       )
     }
     return (
       <div className="space-y-1.5">
         <Row label="Mauzo" value={formatTsh(data.mauzo?.mauzo || 0)} />
-        <Row
-          label="COGS"
-          value={formatTsh(data.mauzo?.cogs || 0)}
-          tone="text-amber-700"
-        />
-        <Row
-          label="Gharama"
-          value={formatTsh(data.gharama?.gharama_jumla || 0)}
-          tone="text-red-600"
-        />
-        <Row
-          label="Faida Safi"
-          value={formatTsh(data.faida_safi || 0)}
-          tone="text-emerald-700"
-          bold
-        />
+        <Row label="COGS" value={formatTsh(data.mauzo?.cogs || 0)} tone="text-amber-700" />
+        <Row label="Gharama" value={formatTsh(data.gharama?.gharama_jumla || 0)} tone="text-red-600" />
+        <Row label="Faida Safi" value={formatTsh(data.faida_safi || 0)} tone="text-emerald-700" bold />
         <div className="pt-2 mt-2 border-t border-slate-200" />
         <Row label="Zaka (10%)" value={formatTsh(data.zaka || 0)} />
         <Row label="Sadaka (10%)" value={formatTsh(data.sadaka || 0)} />
-        <Row
-          label="Inayobaki"
-          value={formatTsh(data.inayobaki || 0)}
-          tone="text-emerald-700"
-          bold
-        />
+        <Row label="Inayobaki" value={formatTsh(data.inayobaki || 0)} tone="text-emerald-700" bold />
       </div>
     )
   }
@@ -1591,35 +1680,24 @@ function DocumentDetailModal({
         <div className="sticky top-0 bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center">
           <div>
             <div className="font-semibold">{doc.id.slice(0, 8)}</div>
-            <div className="text-xs text-slate-500">
-              {formatDate(doc.created_at)}
-            </div>
+            <div className="text-xs text-slate-500">{formatDate(doc.created_at)}</div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-100"
-          >
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100">
             <X size={18} />
           </button>
         </div>
 
         <div className="p-4 space-y-3 text-sm">
           <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-50 border border-slate-200 text-xs font-semibold ${format.tone}`}
-            >
+            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-50 border border-slate-200 text-xs font-semibold ${format.tone}`}>
               <format.Icon size={12} />
               {doc.format.toUpperCase()}
             </span>
-            <span
-              className={`inline-flex items-center gap-1 text-xs font-semibold ${hali.tone}`}
-            >
+            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${hali.tone}`}>
               <hali.Icon size={12} />
               {hali.label}
             </span>
-            <span
-              className={`inline-flex items-center gap-1 text-xs font-semibold ${aina.tone}`}
-            >
+            <span className={`inline-flex items-center gap-1 text-xs font-semibold ${aina.tone}`}>
               <aina.Icon size={12} />
               {aina.label}
             </span>

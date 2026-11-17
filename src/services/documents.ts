@@ -24,6 +24,7 @@ export interface DocumentMeta {
   ukubwa: string;
   kipindi: string;
   store: string | null;
+  store_id?: string | null;    // ✅ ongeza
   store_name: string;
   aliyezalisha: string;
   aliyezalisha_name: string;
@@ -61,13 +62,11 @@ export const documentsApi = {
   remove: (id: string) =>
     api.delete(`/documents/${id}/`).then((r) => r.data),
 
-  // ✅ PDF
   downloadPdf: (id: string) =>
     api
       .get(`/documents/${id}/download/`, { responseType: "blob" })
       .then((r) => r.data as Blob),
 
-  // ✅ CSV
   downloadCsv: (id: string) =>
     api
       .get(`/documents/${id}/download-csv/`, { responseType: "blob" })
@@ -78,6 +77,5 @@ export const documentsApi = {
 // Stores — kwa selector
 // ==================================================================
 export const storesApi = {
-  list: () =>
-    api.get<Store[]>("/stores/").then((r) => r.data),
+  list: () => api.get<Store[]>("/stores/").then((r) => r.data),
 };

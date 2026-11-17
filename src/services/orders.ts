@@ -41,6 +41,7 @@ export interface Order {
   customer: string;
   customer_name: string;
   store: string;
+  store_name?: string;         // ✅ ongeza (backend inaweza kurudisha)
   order_date: string;
   status: OrderStatus;
   subtotal: string;
@@ -51,11 +52,21 @@ export interface Order {
   payments: Payment[];
 }
 
+// ✅ List params — ongeza hii
+export interface OrdersListParams {
+  store?: string;
+  customer?: string;
+  status?: OrderStatus;
+  limit?: number;
+}
+
 // ==================================================================
 // API
 // ==================================================================
 export const ordersApi = {
-  list: () => api.get<Order[]>("/orders/").then((r) => r.data),
+  // ✅ list ina params
+  list: (params?: OrdersListParams) =>
+    api.get<Order[]>("/orders/", { params }).then((r) => r.data),
 
   get: (id: string) =>
     api.get<Order>(`/orders/${id}/`).then((r) => r.data),

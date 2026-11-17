@@ -12,16 +12,25 @@ export interface Customer {
   location: string;
   customer_type: CustomerType;
   credit_limit: string;
+  store?: string | null;        // ✅ ongeza
+  store_id?: string | null;     // ✅ ongeza
+  store_name?: string | null;   // ✅ ongeza
   created_at: string;
   updated_at?: string;
+}
+
+// ✅ List params
+export interface CustomersListParams {
+  store?: string;
 }
 
 // ==================================================================
 // API
 // ==================================================================
 export const customersApi = {
-  list: () =>
-    api.get<Customer[]>("/customers/").then((r) => r.data),
+  // ✅ list ina params
+  list: (params?: CustomersListParams) =>
+    api.get<Customer[]>("/customers/", { params }).then((r) => r.data),
 
   get: (id: string) =>
     api.get<Customer>(`/customers/${id}/`).then((r) => r.data),
@@ -32,6 +41,7 @@ export const customersApi = {
     location?: string;
     customer_type?: CustomerType;
     credit_limit?: number;
+    store?: string;             // ✅ ongeza
   }) =>
     api.post<Customer>("/customers/", payload).then((r) => r.data),
 

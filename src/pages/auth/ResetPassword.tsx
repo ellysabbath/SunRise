@@ -1,24 +1,56 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import {
   Lock, ArrowLeft, AlertTriangle, Eye, EyeOff,
-  ShieldCheck, KeyRound,
+  ShieldCheck, KeyRound, Loader2,
 } from 'lucide-react'
+import { authApi } from '../../services/auth' // ← rekebisha njia kama ulivyofanya kwenye ForgotPassword
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  const e = err as {
+    response?: { data?: { detail?: string; message?: string; error?: string; new_password?: string[] } }
+  }
+  return (
+    e?.response?.data?.detail ||
+    e?.response?.data?.message ||
+    e?.response?.data?.error ||
+    e?.response?.data?.new_password?.[0] ||
+    fallback
+  )
+}
 
 export default function ResetPassword() {
   const navigate = useNavigate()
+  const { state } = useLocation() as { state: { phone?: string; code?: string } | null }
+
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const phone = state?.phone
+  const code = state?.code
+
+  // Mtu akifungua ukurasa huu moja kwa moja bila kupitia OTP
+  if (!phone || !code) return <Navigate to="/forgot-password" replace />
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (loading) return
     if (password.length < 6) return setError('Nywila iwe angalau herufi 6')
     if (password !== confirm) return setError('Nywila hazifanani')
 
     setError('')
-    navigate('/reset-complete')
+    setLoading(true)
+    try {
+      await authApi.resetPassword(phone, code, password)
+      navigate('/reset-complete', { replace: true })
+    } catch (err) {
+      setError(getErrorMessage(err, 'Imeshindwa kubadilisha nywila. Jaribu tena.'))
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -53,7 +85,9 @@ export default function ResetPassword() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-10 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm"
+                  autoComplete="new-password"
+                  disabled={loading}
+                  className="w-full pl-10 pr-10 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm disabled:bg-slate-50"
                 />
                 <button
                   type="button"
@@ -74,7 +108,9 @@ export default function ResetPassword() {
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm"
+                  autoComplete="new-password"
+                  disabled={loading}
+                  className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm disabled:bg-slate-50"
                 />
               </div>
             </div>
@@ -88,10 +124,11 @@ export default function ResetPassword() {
 
             <button
               type="submit"
-              className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700"
+              disabled={loading}
+              className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <KeyRound size={14} />
-              Hifadhi Nywila
+              {loading ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
+              {loading ? 'Inahifadhi...' : 'Hifadhi Nywila'}
             </button>
           </form>
 

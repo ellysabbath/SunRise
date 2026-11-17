@@ -4,6 +4,11 @@ export const authApi = {
   login: (phone: string, password: string) =>
     api.post("/auth/login/", { phone, password }).then((r) => r.data),
 
+  resetPassword: (phone: string, code: string, new_password: string) =>
+  api
+    .post("/auth/reset-password/", { phone, code, new_password })
+    .then((r) => r.data),
+
   register: (payload: { phone: string; full_name: string; password: string; role?: string }) =>
     api.post("/auth/register/", payload).then((r) => r.data),
 
