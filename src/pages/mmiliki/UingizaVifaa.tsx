@@ -3,7 +3,7 @@ import {
   PackagePlus, Plus, Trash2, Save, Search, Package,
   AlertTriangle, CheckCircle2, Clock, XCircle,
   Layers, List, Store, Upload, Image as ImageIcon, X,
-  RefreshCw, Loader2, Check,
+  RefreshCw, Loader2, Check, Copy,
 } from 'lucide-react'
 import { storesApi, type Store as StoreType } from '../../services/stores'
 import { productsApi, type Product } from '../../services/products'
@@ -16,7 +16,7 @@ import { formatTsh, formatDate } from '../../lib/format'
 import { SkeletonLine } from '../../components/Skeleton'
 
 // ==================================================================
-// HARD-CODED OPTIONS (hakuna fetch)
+// HARD-CODED OPTIONS
 // ==================================================================
 const KUNDI_OPTIONS = [
   { id: 'saruji', name: 'Saruji' },
@@ -64,6 +64,37 @@ function generateSkuFor(jina: string, kundi: string): string {
   const rand = Math.floor(10 + Math.random() * 90)
 
   return `${prefix}-${catPrefix}${ts}${rand}`
+}
+
+// ==================================================================
+// Bulk row type
+// ==================================================================
+interface BulkRow {
+  tempId: string
+  jina: string
+  sku: string
+  categoryId: string
+  unitId: string
+  beiMauzo: number
+  beiUnunuzi: number
+  stoki: number
+  status: 'pending' | 'saving' | 'ok' | 'error'
+  error?: string
+  productId?: string
+}
+
+function newBulkRow(): BulkRow {
+  return {
+    tempId: Math.random().toString(36).slice(2),
+    jina: '',
+    sku: '',
+    categoryId: KUNDI_OPTIONS[0].id,
+    unitId: KIPIMO_OPTIONS[0].id,
+    beiMauzo: 0,
+    beiUnunuzi: 0,
+    stoki: 0,
+    status: 'pending',
+  }
 }
 
 // ==================================================================
@@ -334,14 +365,12 @@ export default function UingizaVifaa({ role }: { role: 'mmiliki' | 'admin' }) {
               onSuccess={load}
             />
           )}
-          {tab === 'bulk' && (
-            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
-              <Layers size={40} className="mx-auto text-slate-300 mb-3" />
-              <h3 className="font-semibold">Bulk inakuja hivi karibuni</h3>
-              <p className="text-sm text-slate-500 mt-1">
-                Kwa sasa tumia "Moja kwa Moja".
-              </p>
-            </div>
+          {tab === 'bulk' && selectedStore && (
+            <FomuBulk
+              store={selectedStore}
+              mtumiaji={user?.full_name || 'Mmiliki'}
+              onSuccess={load}
+            />
           )}
           {tab === 'historia' && (
             <Historia movements={movements} loading={loading} />
@@ -382,7 +411,7 @@ function TabButton({
 }
 
 // ==================================================================
-// FomuMoja — Kamili
+// FomuMoja
 // ==================================================================
 function FomuMoja({
   store,
@@ -406,9 +435,6 @@ function FomuMoja({
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // ------------------------------------------------------------------
-  // Auto-generate SKU jina linapobadilika
-  // ------------------------------------------------------------------
   useEffect(() => {
     if (jina.trim() && !sku.trim()) {
       const autoSku = generateSkuFor(jina, categoryId)
@@ -417,9 +443,6 @@ function FomuMoja({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jina])
 
-  // ------------------------------------------------------------------
-  // Regenerate SKU
-  // ------------------------------------------------------------------
   const regenerateSku = () => {
     if (!jina.trim()) {
       setError('Weka jina la bidhaa kwanza')
@@ -430,15 +453,11 @@ function FomuMoja({
     setError('')
   }
 
-  // ------------------------------------------------------------------
-  // Submit
-  // ------------------------------------------------------------------
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setSuccess('')
 
-    // Validation
     if (!jina.trim()) return setError('Jina linahitajika')
     if (!categoryId) return setError('Chagua kundi')
     if (!unitId) return setError('Chagua kipimo')
@@ -446,7 +465,6 @@ function FomuMoja({
     if (beiUnunuzi <= 0) return setError('Bei ya ununuzi si sahihi')
     if (stoki <= 0) return setError('Stoki si sahihi')
 
-    // Hakikisha SKU ipo — kama ni tupu, tengeneza
     let finalSku = sku.trim().toUpperCase()
     if (!finalSku) {
       finalSku = generateSkuFor(jina, categoryId)
@@ -457,7 +475,6 @@ function FomuMoja({
       return setError('SKU haikuweza kutengenezwa. Jaribu tena.')
     }
 
-    // ✅ Tafuta majina kutoka options
     const categoryName =
       KUNDI_OPTIONS.find((c) => c.id === categoryId)?.name || 'Nyingine'
     const unitName =
@@ -465,7 +482,6 @@ function FomuMoja({
 
     setLoading(true)
     try {
-      // 1. Unda bidhaa — tumia category_text na unit_text
       const product = await productsApi.create({
         sku: finalSku,
         name: jina.trim(),
@@ -476,7 +492,6 @@ function FomuMoja({
         is_active: true,
       } as any)
 
-      // 2. Ongeza stoki
       await inventoryApi.adjust({
         product_id: product.id,
         store_id: store.id,
@@ -518,9 +533,6 @@ function FomuMoja({
     }
   }
 
-  // ==================================================================
-  // Render
-  // ==================================================================
   return (
     <form
       onSubmit={submit}
@@ -539,7 +551,6 @@ function FomuMoja({
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {/* Jina */}
         <div className="md:col-span-2">
           <label className="text-sm font-medium">
             Jina la Bidhaa <span className="text-red-500">*</span>
@@ -553,7 +564,6 @@ function FomuMoja({
           />
         </div>
 
-        {/* SKU */}
         <div>
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium">
@@ -586,7 +596,6 @@ function FomuMoja({
           </p>
         </div>
 
-        {/* Kundi */}
         <div>
           <label className="text-sm font-medium">
             Kundi <span className="text-red-500">*</span>
@@ -605,7 +614,6 @@ function FomuMoja({
           </select>
         </div>
 
-        {/* Bei ya Mauzo */}
         <div>
           <label className="text-sm font-medium">
             Bei ya Mauzo (TZS) <span className="text-red-500">*</span>
@@ -621,7 +629,6 @@ function FomuMoja({
           />
         </div>
 
-        {/* Bei ya Ununuzi */}
         <div>
           <label className="text-sm font-medium">
             Bei ya Ununuzi (TZS) <span className="text-red-500">*</span>
@@ -637,7 +644,6 @@ function FomuMoja({
           />
         </div>
 
-        {/* Kipimo */}
         <div>
           <label className="text-sm font-medium">
             Kipimo <span className="text-red-500">*</span>
@@ -656,7 +662,6 @@ function FomuMoja({
           </select>
         </div>
 
-        {/* Stoki */}
         <div>
           <label className="text-sm font-medium">
             Stoki <span className="text-red-500">*</span>
@@ -698,6 +703,476 @@ function FomuMoja({
         )}
       </button>
     </form>
+  )
+}
+
+// ==================================================================
+// FomuBulk — Ingiza bidhaa nyingi kwa wakati mmoja
+// ==================================================================
+function FomuBulk({
+  store,
+  mtumiaji,
+  onSuccess,
+}: {
+  store: StoreType
+  mtumiaji: string
+  onSuccess: () => void
+}) {
+  const [rows, setRows] = useState<BulkRow[]>([newBulkRow()])
+  const [saving, setSaving] = useState(false)
+  const [summary, setSummary] = useState<{
+    ok: number
+    fail: number
+  } | null>(null)
+
+  // ------------------------------------------------------------------
+  // Update row
+  // ------------------------------------------------------------------
+  const updateRow = (tempId: string, patch: Partial<BulkRow>) => {
+    setRows((prev) =>
+      prev.map((r) => (r.tempId === tempId ? { ...r, ...patch } : r))
+    )
+  }
+
+  // ------------------------------------------------------------------
+  // Auto SKU per row
+  // ------------------------------------------------------------------
+  const autoSku = (tempId: string) => {
+    const row = rows.find((r) => r.tempId === tempId)
+    if (!row) return
+    if (!row.jina.trim()) return
+    const sku = generateSkuFor(row.jina, row.categoryId)
+    updateRow(tempId, { sku })
+  }
+
+  // ------------------------------------------------------------------
+  // Add/Remove rows
+  // ------------------------------------------------------------------
+  const addRow = () => setRows((prev) => [...prev, newBulkRow()])
+  const removeRow = (tempId: string) =>
+    setRows((prev) =>
+      prev.length === 1 ? prev : prev.filter((r) => r.tempId !== tempId)
+    )
+  const duplicateRow = (tempId: string) => {
+    const row = rows.find((r) => r.tempId === tempId)
+    if (!row) return
+    setRows((prev) => [
+      ...prev,
+      {
+        ...newBulkRow(),
+        jina: row.jina,
+        sku: '', // SKU mpya itatengenezwa
+        categoryId: row.categoryId,
+        unitId: row.unitId,
+        beiMauzo: row.beiMauzo,
+        beiUnunuzi: row.beiUnunuzi,
+        stoki: row.stoki,
+      },
+    ])
+  }
+
+  // ------------------------------------------------------------------
+  // Validation
+  // ------------------------------------------------------------------
+  const rowErrors = (r: BulkRow): string[] => {
+    const errs: string[] = []
+    if (!r.jina.trim()) errs.push('Jina')
+    if (r.beiMauzo <= 0) errs.push('Bei mauzo')
+    if (r.beiUnunuzi <= 0) errs.push('Bei ununuzi')
+    if (r.stoki <= 0) errs.push('Stoki')
+    return errs
+  }
+
+  const validRows = rows.filter((r) => rowErrors(r).length === 0)
+  const invalidCount = rows.length - validRows.length
+
+  // ------------------------------------------------------------------
+  // Save all
+  // ------------------------------------------------------------------
+  const saveAll = async () => {
+    if (validRows.length === 0) return
+
+    setSaving(true)
+    setSummary(null)
+
+    let ok = 0
+    let fail = 0
+
+    for (const row of rows) {
+      if (rowErrors(row).length > 0) continue
+
+      updateRow(row.tempId, { status: 'saving', error: undefined })
+
+      try {
+        const categoryName =
+          KUNDI_OPTIONS.find((c) => c.id === row.categoryId)?.name ||
+          'Nyingine'
+        const unitName =
+          KIPIMO_OPTIONS.find((u) => u.id === row.unitId)?.name || 'Kipande'
+
+        let finalSku = row.sku.trim().toUpperCase()
+        if (!finalSku) {
+          finalSku = generateSkuFor(row.jina, row.categoryId)
+        }
+
+        const product = await productsApi.create({
+          sku: finalSku,
+          name: row.jina.trim(),
+          category_text: categoryName,
+          unit_text: unitName,
+          cost_price: row.beiUnunuzi,
+          selling_price: row.beiMauzo,
+          is_active: true,
+        } as any)
+
+        await inventoryApi.adjust({
+          product_id: product.id,
+          store_id: store.id,
+          quantity: row.stoki,
+          movement_type: 'manunuzi',
+          note: `Imeingizwa (bulk) na ${mtumiaji}`,
+        })
+
+        updateRow(row.tempId, {
+          status: 'ok',
+          sku: finalSku,
+          productId: product.id,
+        })
+        ok++
+      } catch (err: any) {
+        const data = err?.response?.data
+        let msg = 'Imeshindikana'
+        if (data?.sku) msg = `SKU: ${data.sku[0]}`
+        else if (data?.name) msg = `Jina: ${data.name[0]}`
+        else if (data?.detail) msg = data.detail
+        else if (data?.category_text) msg = `Kundi: ${data.category_text[0]}`
+        else if (data?.unit_text) msg = `Kipimo: ${data.unit_text[0]}`
+
+        updateRow(row.tempId, { status: 'error', error: msg })
+        fail++
+      }
+    }
+
+    setSaving(false)
+    setSummary({ ok, fail })
+
+    // Kama zote zimefanikiwa, subiri kidogo kisha reload
+    if (fail === 0 && ok > 0) {
+      setTimeout(() => {
+        setRows([newBulkRow()])
+        setSummary(null)
+        onSuccess()
+      }, 2000)
+    } else {
+      // Ongeza rows mpya kwa zilizoshindikana? Acha kama zilivyo.
+      onSuccess()
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Reset
+  // ------------------------------------------------------------------
+  const resetAll = () => {
+    if (saving) return
+    if (!confirm('Una uhakika unataka kufuta mistari yote?')) return
+    setRows([newBulkRow()])
+    setSummary(null)
+  }
+
+  // ==================================================================
+  // Render
+  // ==================================================================
+  return (
+    <div className="space-y-4">
+      {/* Info */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 flex items-start gap-3">
+        <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 grid place-items-center shrink-0">
+          <Layers size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-sm">Ingiza Bidhaa Nyingi</div>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Ongeza mistari kadhaa, kisha bofya "Hifadhi Zote" mara moja.
+            Duka: <strong>{store.name}</strong>
+          </p>
+        </div>
+      </div>
+
+      {/* Summary ya mwisho */}
+      {summary && (
+        <div
+          className={`flex items-start gap-2 p-3 rounded-lg text-sm border ${
+            summary.fail === 0
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          }`}
+        >
+          <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+          <div className="flex-1">
+            {summary.ok} zimefanikiwa
+            {summary.fail > 0 && `, ${summary.fail} zimeshindikana`}.
+            {summary.fail > 0 && ' Angalia mistari yenye makosa.'}
+          </div>
+          <button
+            onClick={() => setSummary(null)}
+            className="text-xs font-semibold underline"
+          >
+            Funga
+          </button>
+        </div>
+      )}
+
+      {/* Rows */}
+      <div className="space-y-3">
+        {rows.map((r, idx) => {
+          const errs = rowErrors(r)
+          return (
+            <div
+              key={r.tempId}
+              className={`bg-white rounded-2xl border p-3 md:p-4 ${
+                r.status === 'ok'
+                  ? 'border-emerald-300 bg-emerald-50/40'
+                  : r.status === 'error'
+                  ? 'border-red-300 bg-red-50/30'
+                  : 'border-slate-200'
+              }`}
+            >
+              {/* Row header */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-700 grid place-items-center text-xs font-bold">
+                    {idx + 1}
+                  </span>
+                  {r.status === 'saving' && (
+                    <span className="inline-flex items-center gap-1 text-xs text-blue-600">
+                      <Loader2 size={12} className="animate-spin" /> Inahifadhi...
+                    </span>
+                  )}
+                  {r.status === 'ok' && (
+                    <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
+                      <CheckCircle2 size={12} /> Imehifadhiwa
+                    </span>
+                  )}
+                  {r.status === 'error' && (
+                    <span className="inline-flex items-center gap-1 text-xs text-red-700 font-medium">
+                      <XCircle size={12} /> {r.error || 'Imeshindikana'}
+                    </span>
+                  )}
+                  {r.status === 'pending' && errs.length > 0 && (
+                    <span className="inline-flex items-center gap-1 text-xs text-amber-700">
+                      <AlertTriangle size={12} /> {errs.join(', ')}
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => duplicateRow(r.tempId)}
+                    disabled={saving || r.status === 'saving'}
+                    title="Nakili"
+                    className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 disabled:opacity-40"
+                  >
+                    <Copy size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeRow(r.tempId)}
+                    disabled={saving || rows.length === 1 || r.status === 'saving'}
+                    title="Ondoa"
+                    className="p-1.5 rounded-md hover:bg-red-50 text-red-600 disabled:opacity-40"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Fields */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+                {/* Jina */}
+                <div className="md:col-span-4">
+                  <label className="text-[10px] font-medium text-slate-600 mb-1 block">
+                    Jina *
+                  </label>
+                  <input
+                    value={r.jina}
+                    onChange={(e) =>
+                      updateRow(r.tempId, { jina: e.target.value })
+                    }
+                    onBlur={() => {
+                      if (r.jina.trim() && !r.sku.trim()) autoSku(r.tempId)
+                    }}
+                    placeholder="Saruji Dangote 50kg"
+                    disabled={saving || r.status === 'ok'}
+                    className="w-full px-2.5 py-2 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm disabled:bg-slate-50"
+                  />
+                </div>
+
+                {/* SKU */}
+                <div className="md:col-span-3">
+                  <label className="text-[10px] font-medium text-slate-600 mb-1 block">
+                    SKU
+                  </label>
+                  <input
+                    value={r.sku}
+                    onChange={(e) =>
+                      updateRow(r.tempId, {
+                        sku: e.target.value.toUpperCase(),
+                      })
+                    }
+                    placeholder="Auto"
+                    disabled={saving || r.status === 'ok'}
+                    className="w-full px-2.5 py-2 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-xs font-mono disabled:bg-slate-50"
+                  />
+                </div>
+
+                {/* Kundi */}
+                <div className="md:col-span-2">
+                  <label className="text-[10px] font-medium text-slate-600 mb-1 block">
+                    Kundi
+                  </label>
+                  <select
+                    value={r.categoryId}
+                    onChange={(e) =>
+                      updateRow(r.tempId, { categoryId: e.target.value })
+                    }
+                    disabled={saving || r.status === 'ok'}
+                    className="w-full px-2 py-2 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-xs bg-white disabled:bg-slate-50"
+                  >
+                    {KUNDI_OPTIONS.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Kipimo */}
+                <div className="md:col-span-2">
+                  <label className="text-[10px] font-medium text-slate-600 mb-1 block">
+                    Kipimo
+                  </label>
+                  <select
+                    value={r.unitId}
+                    onChange={(e) =>
+                      updateRow(r.tempId, { unitId: e.target.value })
+                    }
+                    disabled={saving || r.status === 'ok'}
+                    className="w-full px-2 py-2 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-xs bg-white disabled:bg-slate-50"
+                  >
+                    {KIPIMO_OPTIONS.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Nambari */}
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                <div>
+                  <label className="text-[10px] font-medium text-slate-600 mb-1 block">
+                    Bei Mauzo (TZS) *
+                  </label>
+                  <input
+                    type="number"
+                    value={r.beiMauzo || ''}
+                    onChange={(e) =>
+                      updateRow(r.tempId, {
+                        beiMauzo: Number(e.target.value),
+                      })
+                    }
+                    placeholder="18500"
+                    min={0}
+                    disabled={saving || r.status === 'ok'}
+                    className="w-full px-2.5 py-2 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm disabled:bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-medium text-slate-600 mb-1 block">
+                    Bei Ununuzi (TZS) *
+                  </label>
+                  <input
+                    type="number"
+                    value={r.beiUnunuzi || ''}
+                    onChange={(e) =>
+                      updateRow(r.tempId, {
+                        beiUnunuzi: Number(e.target.value),
+                      })
+                    }
+                    placeholder="16000"
+                    min={0}
+                    disabled={saving || r.status === 'ok'}
+                    className="w-full px-2.5 py-2 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm disabled:bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-medium text-slate-600 mb-1 block">
+                    Stoki *
+                  </label>
+                  <input
+                    type="number"
+                    value={r.stoki || ''}
+                    onChange={(e) =>
+                      updateRow(r.tempId, { stoki: Number(e.target.value) })
+                    }
+                    placeholder="200"
+                    min={1}
+                    disabled={saving || r.status === 'ok'}
+                    className="w-full px-2.5 py-2 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm disabled:bg-slate-50"
+                  />
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Actions */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <button
+          type="button"
+          onClick={addRow}
+          disabled={saving}
+          className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 disabled:opacity-50"
+        >
+          <Plus size={16} /> Ongeza Mstari
+        </button>
+        <button
+          type="button"
+          onClick={resetAll}
+          disabled={saving || rows.length === 1}
+          className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+        >
+          <Trash2 size={16} /> Futa Yote
+        </button>
+        <button
+          type="button"
+          onClick={saveAll}
+          disabled={saving || validRows.length === 0}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
+        >
+          {saving ? (
+            <>
+              <Loader2 size={16} className="animate-spin" />
+              Inahifadhi {validRows.length}...
+            </>
+          ) : (
+            <>
+              <Save size={16} />
+              Hifadhi Zote ({validRows.length})
+            </>
+          )}
+        </button>
+      </div>
+
+      {invalidCount > 0 && validRows.length > 0 && (
+        <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          Mistari {invalidCount} haina taarifa kamili na itarukwa.
+        </div>
+      )}
+    </div>
   )
 }
 

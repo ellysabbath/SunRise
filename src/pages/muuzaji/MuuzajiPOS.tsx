@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import {
   Search, Plus, Minus, ShoppingCart, Check, Banknote, Smartphone,
   Wallet, X, Loader2, AlertTriangle, Receipt, RefreshCw,
@@ -56,66 +56,81 @@ export default function MuuzajiPOS() {
   // ==================================================================
   // Load products (za duka + stoki) + customers + store
   // ==================================================================
-  const loadData = async () => {
-    setLoadingData(true)
-    setErrorData('')
-    try {
-      const storeId = user?.store_id || undefined
+  const loadData = useCallback(
+    async (showRefreshToast = false) => {
+      setLoadingData(true)
+      setErrorData('')
+      try {
+        const storeId = user?.store_id || undefined
 
-      if (!storeId) {
-        setErrorData(
-          'Hujapangiwa duka. Wasiliana na mmiliki ili akupange kwenye duka.'
-        )
-        setLoadingData(false)
-        return
-      }
+        if (!storeId) {
+          setErrorData(
+            'Hujapangiwa duka. Wasiliana na mmiliki ili akupange kwenye duka.'
+          )
+          setLoadingData(false)
+          return
+        }
 
-      const [prods, custs, stores, stocks] = await Promise.all([
-        productsApi.list(storeId),
-        customersApi.list(),
-        storesApi.list(),
-        inventoryApi.stockLevels({ store: storeId }),
-      ])
+        const [prods, custs, stores, stocks] = await Promise.all([
+          productsApi.list(storeId),
+          customersApi.list(),
+          storesApi.list(),
+          inventoryApi.stockLevels({ store: storeId }),
+        ])
 
-      // ✅ Unganisha bidhaa na stoki yake kwenye duka
-      const stockMap = new Map<string, number>()
-      stocks.forEach((s: StockLevel) => {
-        stockMap.set(s.product, parseFloat(s.quantity))
-      })
-
-      const productsWithStock: ProductWithStock[] = prods
-        .filter((p) => p.is_active)
-        .map((p) => {
-          const stock = stockMap.get(p.id) || 0
-          return {
-            ...p,
-            stock_quantity: stock,
-            has_stock: stock > 0,
-          }
+        // ✅ Unganisha bidhaa na stoki yake kwenye duka
+        const stockMap = new Map<string, number>()
+        stocks.forEach((s: StockLevel) => {
+          stockMap.set(s.product, parseFloat(s.quantity))
         })
 
-      setProducts(productsWithStock)
-      setCustomers(custs)
+        const productsWithStock: ProductWithStock[] = prods
+          .filter((p) => p.is_active)
+          .map((p) => {
+            const stock = stockMap.get(p.id) || 0
+            return {
+              ...p,
+              stock_quantity: stock,
+              has_stock: stock > 0,
+            }
+          })
 
-      // Pata duka la muuzaji
-      const myStore = stores.find((s) => s.id === user.store_id) || null
-      setStore(myStore)
+        setProducts(productsWithStock)
+        setCustomers(custs)
 
-      if (custs.length > 0 && !mtejaId) setMtejaId(custs[0].id)
-    } catch (err: any) {
-      setErrorData(
-        err?.response?.data?.detail ||
+        // Pata duka la muuzaji — tumia storeId (si user.store_id)
+        const myStore = stores.find((s) => s.id === storeId) || null
+        setStore(myStore)
+
+        // ✅ Functional update — hakikisha mteja aliyechaguliwa bado yupo
+        setMtejaId((prev) => {
+          if (prev && custs.some((c) => c.id === prev)) return prev
+          return custs.length > 0 ? custs[0].id : ''
+        })
+
+        if (showRefreshToast) {
+          setToast({ msg: 'Data imesasishwa.', ok: true })
+          setTimeout(() => setToast(null), 2500)
+        }
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.detail ||
           'Imeshindikana kupakia bidhaa na wateja.'
-      )
-    } finally {
-      setLoadingData(false)
-    }
-  }
+        setErrorData(msg)
+        if (showRefreshToast) {
+          setToast({ msg, ok: false })
+          setTimeout(() => setToast(null), 4000)
+        }
+      } finally {
+        setLoadingData(false)
+      }
+    },
+    [user?.store_id]
+  )
 
   useEffect(() => {
     loadData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.store_id])
+  }, [loadData])
 
   // ==================================================================
   // Filter — onyesha tu bidhaa zenye stoki
@@ -255,7 +270,9 @@ export default function MuuzajiPOS() {
       return
     }
 
-    if (!user?.store_id) {
+    // ✅ Extract storeId ili TypeScript itambue
+    const storeId = user?.store_id
+    if (!storeId) {
       setToast({ msg: 'Hujapangiwa duka. Wasiliana na mmiliki.', ok: false })
       setTimeout(() => setToast(null), 4000)
       return
@@ -266,7 +283,7 @@ export default function MuuzajiPOS() {
     try {
       const order = await ordersApi.create({
         customer_id: mtejaId,
-        store_id: user.store_id,
+        store_id: storeId,
         items: lines.map((l) => ({
           product_id: l.id,
           quantity: l.wingi,
@@ -310,7 +327,7 @@ export default function MuuzajiPOS() {
       setCart([])
       setKumbukumbu('')
       setPayOpen(false)
-      await loadData() // ✅ Pata stoki mpya
+      await loadData(false) // ✅ Pata stoki mpya bila toast ya "imesasishwa"
       setTimeout(() => setToast(null), 5000)
     } catch (err: any) {
       setToast({
@@ -357,12 +374,12 @@ export default function MuuzajiPOS() {
             </div>
           </div>
           <button
-            onClick={loadData}
+            onClick={() => loadData(true)}
             disabled={loadingData}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold hover:bg-slate-50 disabled:opacity-60"
           >
             <RefreshCw size={14} className={loadingData ? 'animate-spin' : ''} />
-            Sasisha
+            {loadingData ? 'Inasasisha...' : 'Sasisha'}
           </button>
         </div>
 
@@ -410,10 +427,11 @@ export default function MuuzajiPOS() {
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">{errorData}</div>
             <button
-              onClick={loadData}
-              className="text-xs font-semibold underline"
+              onClick={() => loadData(true)}
+              disabled={loadingData}
+              className="text-xs font-semibold underline disabled:opacity-50"
             >
-              Jaribu tena
+              {loadingData ? 'Inajaribu...' : 'Jaribu tena'}
             </button>
           </div>
         )}
