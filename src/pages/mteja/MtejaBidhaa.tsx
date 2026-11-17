@@ -1,66 +1,158 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Search, Plus, Minus, ShoppingCart, Check, Package, Store } from 'lucide-react'
-import { useStore } from '../../store/StoreContext'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate, Navigate } from 'react-router-dom'
+import {
+  Search, Plus, Minus, ShoppingCart, Check, Package, Store,
+  Loader2, AlertTriangle, RefreshCw, X,
+} from 'lucide-react'
+import {
+  productsApi,
+  type Product,
+  type Category,
+} from '../../services/products'
+import { inventoryApi, type StockLevel } from '../../services/inventory'
+import { useAuth } from '../../context/AuthContext'
 import { useCart } from '../../context/CartContext'
-import { iconForKundi } from '../../utils/icons'
-import { formatTsh } from '../../utils/faida'
-import type { KundiBidhaa } from '../../types'
 
-const KUNDI_FILTERS: { key: KundiBidhaa | 'zote'; label: string }[] = [
-  { key: 'zote', label: 'Zote' },
-  { key: 'Saruji', label: 'Saruji' },
-  { key: 'Nondo', label: 'Nondo' },
-  { key: 'Mabati', label: 'Mabati' },
-  { key: 'Mbao', label: 'Mbao' },
-  { key: 'Rangi', label: 'Rangi' },
-  { key: 'Bomba', label: 'Bomba' },
-  { key: 'Umeme', label: 'Umeme' },
-  { key: 'Zana', label: 'Zana' },
-]
+// ==================================================================
+// Format
+// ==================================================================
+function formatTsh(n: number | string | undefined | null): string {
+  if (n == null) return 'TZS 0'
+  return `TZS ${Number(n).toLocaleString('en-US')}`
+}
 
+// ==================================================================
+// Page
+// ==================================================================
 export default function MtejaBidhaa() {
   const navigate = useNavigate()
-  const { bidhaa } = useStore()
-  const [q, setQ] = useState('')
-  const [filterKundi, setFilterKundi] = useState<KundiBidhaa | 'zote'>('zote')
+  const { user, loading: authLoading } = useAuth()
   const { add, inc, dec, detailed, count, total } = useCart()
 
-  const filtered = bidhaa.filter((b) => {
-    if (filterKundi !== 'zote' && b.kundi !== filterKundi) return false
+  const storeId = user?.store_id || undefined
+
+  const [products, setProducts] = useState<Product[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [stockMap, setStockMap] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [q, setQ] = useState('')
+  const [filterCategory, setFilterCategory] = useState<string>('')
+
+  // ------------------------------------------------------------------
+  // Guard — kama hajaingia
+  // ------------------------------------------------------------------
+  if (!authLoading && !user) {
+    return <Navigate to="/login" replace />
+  }
+
+  // ------------------------------------------------------------------
+  // Load
+  // ------------------------------------------------------------------
+  const loadAll = useCallback(async () => {
+    if (!user) return
+
+    setLoading(true)
+    setError('')
+    try {
+      const [productsData, categoriesData] = await Promise.all([
+        productsApi.list(storeId),
+        productsApi.categories().catch(() => []),
+      ])
+      setProducts(productsData)
+      setCategories(categoriesData)
+
+      // ✅ Stock levels kwa store ya user
+      if (storeId) {
+        const stockData = await inventoryApi
+          .stockLevels({ store: storeId })
+          .catch(() => [])
+        const map: Record<string, number> = {}
+        stockData.forEach((s: StockLevel) => {
+          map[s.product] = Number(s.quantity) || 0
+        })
+        setStockMap(map)
+      }
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Imeshindwa kupakua bidhaa')
+    } finally {
+      setLoading(false)
+    }
+  }, [user, storeId])
+
+  useEffect(() => {
+    if (user) loadAll()
+  }, [user, loadAll])
+
+  // ------------------------------------------------------------------
+  // Filter
+  // ------------------------------------------------------------------
+  const filtered = useMemo(() => {
     const query = q.toLowerCase().trim()
-    if (!query) return true
-    return (
-      b.jina.toLowerCase().includes(query) ||
-      b.sku.toLowerCase().includes(query) ||
-      b.kundi.toLowerCase().includes(query) ||
-      b.duka.toLowerCase().includes(query)
-    )
-  })
+    return products.filter((p) => {
+      if (!p.is_active) return false
+      if (filterCategory && p.category !== filterCategory) return false
+      if (!query) return true
+      return (
+        p.name.toLowerCase().includes(query) ||
+        p.sku.toLowerCase().includes(query) ||
+        p.category_name?.toLowerCase().includes(query)
+      )
+    })
+  }, [products, q, filterCategory])
 
-  const wingi = (id: string) => detailed.find((l) => l.id === id)?.wingi ?? 0
+  const wingi = (id: string) =>
+    detailed.find((l) => l.id === id)?.wingi ?? 0
 
+  // ==================================================================
+  // Render
+  // ==================================================================
   return (
     <div className="space-y-5">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900">
             Bidhaa Zetu
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            {bidhaa.length} bidhaa zipo sokoni
+            {products.length} bidhaa zipo sokoni
+            {user?.full_name && (
+              <span className="ml-1 text-slate-400">• {user.full_name}</span>
+            )}
           </p>
         </div>
-        {count > 0 && (
+        <div className="flex gap-2 self-start sm:self-auto">
           <button
-            onClick={() => navigate('/mteja/quotation')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-semibold hover:bg-brand-700 transition self-start sm:self-auto"
+            onClick={loadAll}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-3 py-2.5 rounded-lg bg-white border border-slate-200 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
           >
-            <ShoppingCart size={16} />
-            Cart ({count}) — {formatTsh(total)}
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            Refresh
           </button>
-        )}
+          {count > 0 && (
+            <button
+              onClick={() => navigate('/mteja/quotation')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-semibold hover:bg-brand-700 transition"
+            >
+              <ShoppingCart size={16} />
+              Cart ({count}) — {formatTsh(total)}
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Error */}
+      {error && (
+        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-start gap-2">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError('')} className="text-red-500">
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Search + Filter */}
       <div className="bg-white rounded-2xl border border-slate-200 p-3 md:p-4 space-y-3">
@@ -73,33 +165,59 @@ export default function MtejaBidhaa() {
             className="w-full pl-11 pr-4 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 outline-none text-sm"
           />
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {KUNDI_FILTERS.map((f) => (
+
+        {/* Category filters */}
+        {categories.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
             <button
-              key={f.key}
-              onClick={() => setFilterKundi(f.key)}
+              onClick={() => setFilterCategory('')}
               className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${
-                filterKundi === f.key
+                !filterCategory
                   ? 'bg-brand-600 text-white border-brand-600 font-semibold'
                   : 'bg-white border-slate-200 hover:bg-slate-50'
               }`}
             >
-              {f.label}
+              Zote
             </button>
-          ))}
-        </div>
+            {categories.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setFilterCategory(c.id)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${
+                  filterCategory === c.id
+                    ? 'bg-brand-600 text-white border-brand-600 font-semibold'
+                    : 'bg-white border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {filtered.length === 0 ? (
+      {/* Products */}
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="bg-white rounded-2xl border border-slate-200 p-5 animate-pulse">
+              <div className="w-14 h-14 rounded-xl bg-slate-200" />
+              <div className="h-4 w-3/4 mt-3 bg-slate-200 rounded" />
+              <div className="h-3 w-1/2 mt-1.5 bg-slate-200 rounded" />
+              <div className="h-5 w-1/3 mt-2 bg-slate-200 rounded" />
+            </div>
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
           <Package size={40} className="mx-auto text-slate-300 mb-3" />
           <h3 className="font-semibold">
-            {bidhaa.length === 0
+            {products.length === 0
               ? 'Hakuna bidhaa bado'
               : 'Hakuna bidhaa iliyopatikana'}
           </h3>
           <p className="text-sm text-slate-500 mt-1">
-            {bidhaa.length === 0
+            {products.length === 0
               ? 'Mmiliki bado hajaingiza bidhaa kwenye duka.'
               : `Jaribu "${q}" au badilisha kichujio.`}
           </p>
@@ -109,7 +227,10 @@ export default function MtejaBidhaa() {
           {filtered.map((b) => {
             const c = wingi(b.id)
             const inCart = c > 0
-            const Icon = iconForKundi(b.iconKey)
+            const stock = storeId ? stockMap[b.id] ?? 0 : null
+            const outOfStock = stock !== null && stock <= 0
+            const lowStock =
+              stock !== null && stock > 0 && stock <= b.low_stock_alert
 
             return (
               <div
@@ -122,44 +243,44 @@ export default function MtejaBidhaa() {
               >
                 <div className="flex items-start justify-between">
                   <div className="w-14 h-14 rounded-xl bg-slate-50 border border-slate-200 overflow-hidden grid place-items-center text-slate-600 shrink-0">
-                    {b.pichaUrl ? (
-                      <img src={b.pichaUrl} alt={b.jina} className="w-full h-full object-cover" />
-                    ) : (
-                      <Icon size={22} />
-                    )}
+                    <Package size={22} />
                   </div>
                   {inCart ? (
                     <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200">
                       <Check size={10} />
                       Cart
                     </span>
-                  ) : b.stoki <= 0 ? (
+                  ) : outOfStock ? (
                     <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold text-red-700 bg-red-50 px-2 py-1 rounded-md border border-red-200">
                       Imeisha
                     </span>
-                  ) : b.stoki <= 20 ? (
+                  ) : lowStock ? (
                     <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
-                      {b.stoki} {b.uom}
+                      {stock} {b.unit_name || 'pcs'}
                     </span>
                   ) : null}
                 </div>
 
                 <div className="mt-3">
-                  <div className="font-semibold text-sm">{b.jina}</div>
+                  <div className="font-semibold text-sm">{b.name}</div>
                   <div className="text-xs text-slate-500 mt-0.5 truncate">
                     {b.sku}
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
-                    <Store size={10} /> {b.duka}
-                  </div>
+                  {b.category_name && (
+                    <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+                      <Store size={10} /> {b.category_name}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-between items-end mt-4">
                   <div>
                     <div className="text-lg font-bold text-brand-700">
-                      {formatTsh(b.beiMauzo)}
+                      {formatTsh(b.selling_price)}
                     </div>
-                    <div className="text-xs text-slate-500">kwa {b.uom}</div>
+                    <div className="text-xs text-slate-500">
+                      kwa {b.unit_name || 'kipimo'}
+                    </div>
                   </div>
 
                   {inCart ? (
@@ -182,8 +303,18 @@ export default function MtejaBidhaa() {
                     </div>
                   ) : (
                     <button
-                      onClick={() => add(b.id)}
-                      disabled={b.stoki <= 0}
+                      onClick={() =>
+                        add({
+                          id: b.id,
+                          jina: b.name,
+                          bei: Number(b.selling_price),
+                          uom: b.unit_name || 'pcs',
+                          iconKey: b.category_name || 'default',
+                          pichaUrl: undefined,
+                          wingi: 1,
+                        })
+                      }
+                      disabled={outOfStock}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-sm font-semibold hover:bg-brand-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Plus size={14} />
@@ -195,7 +326,9 @@ export default function MtejaBidhaa() {
                 {inCart && (
                   <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between text-sm">
                     <span className="text-slate-500">Jumla ndogo</span>
-                    <span className="font-semibold">{formatTsh(b.beiMauzo * c)}</span>
+                    <span className="font-semibold">
+                      {formatTsh(Number(b.selling_price) * c)}
+                    </span>
                   </div>
                 )}
               </div>

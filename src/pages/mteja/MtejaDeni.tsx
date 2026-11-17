@@ -1,12 +1,23 @@
-import { useMemo, useState } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Navigate } from 'react-router-dom'
 import {
   Wallet, AlertTriangle, CheckCircle2, Loader2,
-  Banknote, Smartphone, X, Receipt, ChevronRight,
+  Banknote, Smartphone, X, Receipt, ChevronRight, RefreshCw,
 } from 'lucide-react'
-import { useStore } from '../../store/StoreContext'
-import { formatTsh } from '../../utils/faida'
-import type { NjiaMalipo } from '../../types'
+import { ordersApi, type Order, type MalipoNjia } from '../../services/orderss'
+import { useAuth } from '../../context/AuthContext'
 
+// ==================================================================
+// Format
+// ==================================================================
+function formatTsh(n: number | string | undefined | null): string {
+  if (n == null) return 'TZS 0'
+  return `TZS ${Number(n).toLocaleString('en-US')}`
+}
+
+// ==================================================================
+// Meta
+// ==================================================================
 type NjiaMalipoDeni = 'mpesa' | 'tigopesa' | 'cash'
 
 const NJIA_META: Record<
@@ -18,38 +29,77 @@ const NJIA_META: Record<
   tigopesa: { label: 'Tigo Pesa', Icon: Smartphone, tone: 'text-orange-600' },
 }
 
+// ✅ Map NjiaMalipoDeni → MalipoNjia (backend)
+const NJIA_BACKEND: Record<NjiaMalipoDeni, MalipoNjia> = {
+  cash: 'cash',
+  mpesa: 'mpesa',
+  tigopesa: 'tigo',
+}
+
+// ==================================================================
+// Page
+// ==================================================================
 export default function MtejaDeni() {
-  const { orders, malipo, wateja, deniLaMteja, ongezaMalipo } = useStore()
-  const mteja = wateja[0]
+  const { user, loading: authLoading } = useAuth()
+
+  const [orders, setOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [payOpen, setPayOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
-  const deni = useMemo(
-    () => (mteja ? deniLaMteja(mteja.id) : 0),
-    [mteja, orders, malipo]
-  )
-
-  if (!mteja) {
-    return (
-      <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-sm text-slate-500">
-        Hakuna mteja
-      </div>
-    )
+  // ------------------------------------------------------------------
+  // Guard
+  // ------------------------------------------------------------------
+  if (!authLoading && !user) {
+    return <Navigate to="/login" replace />
   }
 
-  const ordersZake = orders
-    .filter((o) => o.simu === mteja.simu)
-    .map((o) => {
-      const jumlaIlipwa = o.malipo
-        .filter((m) => m.hali === 'imethibitishwa')
-        .reduce((s, m) => s + m.kiasi, 0)
-      const baki = o.jumla - jumlaIlipwa
-      return { ...o, jumlaIlipwa, baki }
-    })
+  // ------------------------------------------------------------------
+  // Load orders
+  // ------------------------------------------------------------------
+  const loadAll = useCallback(async () => {
+    if (!user) return
+    setLoading(true)
+    setError('')
+    try {
+      const data = await ordersApi.orders({ limit: 100 }).catch(() => [])
+      setOrders(data)
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Imeshindwa kupakua orders')
+    } finally {
+      setLoading(false)
+    }
+  }, [user])
 
-  const ordersZenyeDeni = ordersZake.filter((o) => o.baki > 0)
+  useEffect(() => {
+    if (user) loadAll()
+  }, [user, loadAll])
 
+  // ------------------------------------------------------------------
+  // ✅ Derive deni kutoka orders (upande wa client)
+  // ------------------------------------------------------------------
+  const deniOrders = useMemo(
+    () =>
+      orders
+        .filter((o) => o.is_deni && !o.deni_imekwisha)
+        .map((o) => ({
+          ...o,
+          baki: Number(o.deni_iliyobaki || 0),
+          jumla: Number(o.total || 0),
+        })),
+    [orders]
+  )
+
+  const totalDeni = useMemo(
+    () => deniOrders.reduce((s, o) => s + o.baki, 0),
+    [deniOrders]
+  )
+
+  // ------------------------------------------------------------------
+  // Handlers
+  // ------------------------------------------------------------------
   const funguaMalipo = (orderId?: string) => {
     setSelectedOrder(orderId ?? null)
     setPayOpen(true)
@@ -59,96 +109,154 @@ export default function MtejaDeni() {
     setPayOpen(false)
     setToast({ msg, ok })
     setTimeout(() => setToast(null), 5000)
+    if (ok) loadAll() // ✅ refresh orders baada ya malipo
   }
 
+  // ==================================================================
+  // Render
+  // ==================================================================
   return (
     <div className="space-y-5 max-w-3xl">
-      <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900">
-        Deni Langu
-      </h1>
-
-      {/* ============ DENI LA SASA ============ */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div
-              className={`w-14 h-14 rounded-2xl bg-slate-50 border border-slate-200 grid place-items-center ${
-                deni > 0 ? 'text-red-600' : 'text-emerald-600'
-              }`}
-            >
-              <Wallet size={24} />
-            </div>
-            <div>
-              <div className="text-sm text-slate-500">Deni la Sasa</div>
-              <div
-                className={`text-2xl md:text-3xl font-bold ${
-                  deni > 0 ? 'text-red-700' : 'text-emerald-700'
-                }`}
-              >
-                {formatTsh(deni)}
-              </div>
-              <div className="text-xs text-slate-500 mt-1">
-                {deni > 0
-                  ? 'Tafadhali lipa deni lako'
-                  : 'Hauna deni — umelipa yote'}
-              </div>
-            </div>
-          </div>
-
-          {deni > 0 && (
-            <button
-              onClick={() => funguaMalipo()}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-semibold hover:bg-brand-700 transition self-start sm:self-auto"
-            >
-              <Banknote size={16} />
-              Lipa Deni
-              <ChevronRight size={14} />
-            </button>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900">
+            Deni Langu
+          </h1>
+          {user?.full_name && (
+            <p className="text-sm text-slate-500 mt-1">
+              {user.full_name}
+              {user.phone && (
+                <span className="text-slate-400"> • {user.phone}</span>
+              )}
+            </p>
           )}
         </div>
+        <button
+          onClick={loadAll}
+          disabled={loading}
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-medium hover:bg-slate-50 disabled:opacity-50 self-start"
+        >
+          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          Refresh
+        </button>
       </div>
+
+      {/* Error */}
+      {error && (
+        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-start gap-2">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError('')} className="text-red-500">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* ============ DENI LA SASA ============ */}
+      {loading ? (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 animate-pulse">
+          <div className="h-14 w-14 rounded-2xl bg-slate-200" />
+          <div className="h-4 w-32 bg-slate-200 rounded mt-3" />
+          <div className="h-8 w-48 bg-slate-200 rounded mt-2" />
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div
+                className={`w-14 h-14 rounded-2xl bg-slate-50 border border-slate-200 grid place-items-center ${
+                  totalDeni > 0 ? 'text-red-600' : 'text-emerald-600'
+                }`}
+              >
+                <Wallet size={24} />
+              </div>
+              <div>
+                <div className="text-sm text-slate-500">Deni la Sasa</div>
+                <div
+                  className={`text-2xl md:text-3xl font-bold ${
+                    totalDeni > 0 ? 'text-red-700' : 'text-emerald-700'
+                  }`}
+                >
+                  {formatTsh(totalDeni)}
+                </div>
+                <div className="text-xs text-slate-500 mt-1">
+                  {totalDeni > 0
+                    ? 'Tafadhali lipa deni lako'
+                    : 'Hauna deni — umelipa yote'}
+                </div>
+              </div>
+            </div>
+
+            {totalDeni > 0 && (
+              <button
+                onClick={() => funguaMalipo()}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-semibold hover:bg-brand-700 transition self-start sm:self-auto"
+              >
+                <Banknote size={16} />
+                Lipa Deni
+                <ChevronRight size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ============ ORDERS ZANGU ============ */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 md:p-5">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold">Orders Zangu ({ordersZake.length})</h2>
-          {ordersZenyeDeni.length > 0 && (
+          <h2 className="font-semibold">
+            Orders Zangu ({orders.length})
+          </h2>
+          {deniOrders.length > 0 && (
             <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md font-semibold">
-              {ordersZenyeDeni.length} zina deni
+              {deniOrders.length} zina deni
             </span>
           )}
         </div>
 
-        {ordersZake.length === 0 ? (
+        {loading ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-14 bg-slate-100 rounded animate-pulse" />
+            ))}
+          </div>
+        ) : orders.length === 0 ? (
           <div className="text-sm text-slate-500 text-center py-6">
             Hakuna order bado
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {ordersZake.map((o) => {
-              const baki = o.baki
+            {orders.map((o) => {
+              const baki = Number(o.deni_iliyobaki || 0)
+              const isDeni = o.is_deni && !o.deni_imekwisha
+
               return (
                 <div key={o.id} className="py-3 flex items-center gap-3">
                   <div
                     className={`w-9 h-9 rounded-lg bg-slate-50 border border-slate-200 grid place-items-center shrink-0 ${
-                      baki > 0 ? 'text-amber-600' : 'text-emerald-600'
+                      isDeni ? 'text-amber-600' : 'text-emerald-600'
                     }`}
                   >
-                    {baki > 0 ? (
+                    {isDeni ? (
                       <AlertTriangle size={16} />
                     ) : (
                       <CheckCircle2 size={16} />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{o.id}</div>
-                    <div className="text-xs text-slate-500">{o.tarehe}</div>
+                    <div className="text-sm font-medium truncate font-mono">
+                      #{o.id.slice(0, 8).toUpperCase()}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {o.created_at?.slice(0, 10)}
+                    </div>
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-bold text-slate-900">
-                      {formatTsh(o.jumla)}
+                      {formatTsh(o.total)}
                     </div>
-                    {baki > 0 ? (
+                    {isDeni ? (
                       <div className="text-xs text-amber-700">
                         Baki: {formatTsh(baki)}
                       </div>
@@ -156,7 +264,7 @@ export default function MtejaDeni() {
                       <div className="text-xs text-emerald-700">Imelipwa</div>
                     )}
                   </div>
-                  {baki > 0 && (
+                  {isDeni && (
                     <button
                       onClick={() => funguaMalipo(o.id)}
                       className="ml-2 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-brand-50 text-brand-700 text-xs font-semibold hover:bg-brand-100 shrink-0"
@@ -173,14 +281,13 @@ export default function MtejaDeni() {
       </div>
 
       {/* ============ MODAL YA MALIPO ============ */}
-      {payOpen && (
+      {payOpen && user && (
         <MalipoDeniModal
-          mtejaId={mteja.id}
           selectedOrder={selectedOrder}
-          orders={ordersZenyeDeni}
+          orders={deniOrders}
+          userPhone={user.phone}
           onClose={() => setPayOpen(false)}
           onSuccess={handleSuccess}
-          ongezaMalipo={ongezaMalipo}
         />
       )}
 
@@ -203,127 +310,109 @@ export default function MtejaDeni() {
 // Modal ya Malipo ya Deni
 // ============================================================
 function MalipoDeniModal({
-  mtejaId,
   selectedOrder,
   orders,
+  userPhone,
   onClose,
   onSuccess,
-  ongezaMalipo,
 }: {
-  mtejaId: string
   selectedOrder: string | null
-  orders: ReturnType<typeof useStore>['orders']
+  orders: (Order & { baki: number })[]
+  userPhone: string
   onClose: () => void
   onSuccess: (msg: string, ok: boolean) => void
-  ongezaMalipo: ReturnType<typeof useStore>['ongezaMalipo']
 }) {
   const [njia, setNjia] = useState<NjiaMalipoDeni>('mpesa')
   const [kiasi, setKiasi] = useState(0)
   const [kumbukumbu, setKumbukumbu] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [initialized, setInitialized] = useState(false)
 
+  // ✅ Order moja au zote
   const order = selectedOrder ? orders.find((o) => o.id === selectedOrder) : null
   const jumlaBaki = order
-    ? order.jumla -
-      order.malipo
-        .filter((m) => m.hali === 'imethibitishwa')
-        .reduce((s, m) => s + m.kiasi, 0)
-    : orders.reduce(
-        (s, o) =>
-          s +
-          (o.jumla -
-            o.malipo
-              .filter((m) => m.hali === 'imethibitishwa')
-              .reduce((a, m) => a + m.kiasi, 0)),
-        0
-      )
+    ? order.baki
+    : orders.reduce((s, o) => s + o.baki, 0)
 
-  const [initialized, setInitialized] = useState(false)
+  // ✅ Set kiasi cha awali
   if (!initialized && jumlaBaki > 0) {
     setKiasi(jumlaBaki)
     setInitialized(true)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // ------------------------------------------------------------------
+  // Submit
+  // ------------------------------------------------------------------
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
 
-    if (!mtejaId) return setError('Mteja haipo')
     if (kiasi <= 0) return setError('Kiasi lazima kiwe zaidi ya sifuri')
     if (kiasi > jumlaBaki) return setError('Kiasi hakiwezi kuzidi baki')
-
     if (njia !== 'cash' && !kumbukumbu.trim()) {
       return setError('Weka kumbukumbu ya malipo (reference)')
     }
 
     setSaving(true)
 
-    setTimeout(() => {
-      try {
-        if (order) {
-          ongezaMalipo({
-            orderId: order.id,
-            njia: njia as NjiaMalipo,
-            simu: order.simu,
-            kumbukumbu: njia === 'cash' ? 'CASH' : kumbukumbu.trim().toUpperCase(),
-            kiasi,
+    try {
+      // ✅ 1. Malipo kwa order moja
+      if (order) {
+        await ordersApi.createMalipo({
+          order_id: order.id,
+          njia: NJIA_BACKEND[njia],
+          simu: userPhone,
+          kumbukumbu: njia === 'cash' ? 'CASH' : kumbukumbu.trim().toUpperCase(),
+          kiasi,
+          hali: njia === 'cash' ? 'imethibitishwa' : 'inasubiri',
+        })
+      } else {
+        // ✅ 2. Malipo kwa orders zote (split)
+        let remaining = kiasi
+        const sorted = [...orders].sort((a, b) => a.baki - b.baki)
+
+        for (const o of sorted) {
+          if (remaining <= 0) break
+          if (o.baki <= 0) continue
+          const malipoKiasi = Math.min(remaining, o.baki)
+          await ordersApi.createMalipo({
+            order_id: o.id,
+            njia: NJIA_BACKEND[njia],
+            simu: userPhone,
+            kumbukumbu:
+              njia === 'cash' ? 'CASH' : kumbukumbu.trim().toUpperCase(),
+            kiasi: malipoKiasi,
             hali: njia === 'cash' ? 'imethibitishwa' : 'inasubiri',
           })
-        } else {
-          let remaining = kiasi
-          const sorted = [...orders].sort((a, b) => {
-            const aBaki =
-              a.jumla -
-              a.malipo
-                .filter((m) => m.hali === 'imethibitishwa')
-                .reduce((s, m) => s + m.kiasi, 0)
-            const bBaki =
-              b.jumla -
-              b.malipo
-                .filter((m) => m.hali === 'imethibitishwa')
-                .reduce((s, m) => s + m.kiasi, 0)
-            return aBaki - bBaki
-          })
-
-          for (const o of sorted) {
-            if (remaining <= 0) break
-            const bakiOrder =
-              o.jumla -
-              o.malipo
-                .filter((m) => m.hali === 'imethibitishwa')
-                .reduce((s, m) => s + m.kiasi, 0)
-            if (bakiOrder <= 0) continue
-            const malipoKiasi = Math.min(remaining, bakiOrder)
-            ongezaMalipo({
-              orderId: o.id,
-              njia: njia as NjiaMalipo,
-              simu: o.simu,
-              kumbukumbu:
-                njia === 'cash' ? 'CASH' : kumbukumbu.trim().toUpperCase(),
-              kiasi: malipoKiasi,
-              hali: njia === 'cash' ? 'imethibitishwa' : 'inasubiri',
-            })
-            remaining -= malipoKiasi
-          }
+          remaining -= malipoKiasi
         }
-
-        setSaving(false)
-        const msg =
-          njia === 'cash'
-            ? `Malipo ya ${formatTsh(kiasi)} yamekamilika (Cash)`
-            : `Malipo ya ${formatTsh(kiasi)} yamewasilishwa. Yanasubiri uthibitisho wa duka.`
-        onSuccess(msg, true)
-      } catch {
-        setSaving(false)
-        onSuccess('Imeshindwa kukamilisha malipo', false)
       }
-    }, 500)
+
+      const msg =
+        njia === 'cash'
+          ? `Malipo ya ${formatTsh(kiasi)} yamekamilika (Cash)`
+          : `Malipo ya ${formatTsh(kiasi)} yamewasilishwa. Yanasubiri uthibitisho wa duka.`
+      onSuccess(msg, true)
+    } catch (e: any) {
+      const detail = e?.response?.data
+      let msg = 'Imeshindwa kukamilisha malipo'
+      if (typeof detail === 'object') {
+        msg = String(Object.values(detail)[0])
+      } else if (detail) {
+        msg = detail
+      }
+      onSuccess(msg, false)
+    } finally {
+      setSaving(false)
+    }
   }
 
-  // ✅ Tumia njiaMeta kwenye UI — badge ya header
   const njiaMeta = NJIA_META[njia]
 
+  // ==================================================================
+  // Render
+  // ==================================================================
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div
@@ -339,9 +428,10 @@ function MalipoDeniModal({
               Lipa Deni
             </div>
             <div className="text-xs text-slate-500">
-              {order ? `Order ${order.id}` : `Orders ${orders.length} zenye deni`}
+              {order
+                ? `Order #${order.id.slice(0, 8).toUpperCase()}`
+                : `Orders ${orders.length} zenye deni`}
             </div>
-            {/* ✅ Badge ya njia iliyochaguliwa */}
             <div
               className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md mt-1 bg-slate-50 border border-slate-200 ${njiaMeta.tone}`}
             >
@@ -370,7 +460,9 @@ function MalipoDeniModal({
 
           {/* Njia */}
           <div>
-            <label className="text-sm font-medium mb-2 block">Njia ya Malipo</label>
+            <label className="text-sm font-medium mb-2 block">
+              Njia ya Malipo
+            </label>
             <div className="grid grid-cols-3 gap-2">
               {(Object.keys(NJIA_META) as NjiaMalipoDeni[]).map((k) => {
                 const meta = NJIA_META[k]
@@ -424,11 +516,12 @@ function MalipoDeniModal({
             </div>
           </div>
 
-          {/* Kumbukumbu — kwa mobile tu */}
+          {/* Kumbukumbu */}
           {njia !== 'cash' && (
             <div>
               <label className="text-sm font-medium mb-1 block">
-                Kumbukumbu ya Malipo <span className="text-red-500">*</span>
+                Kumbukumbu ya Malipo{' '}
+                <span className="text-red-500">*</span>
               </label>
               <input
                 value={kumbukumbu}
@@ -443,19 +536,17 @@ function MalipoDeniModal({
             </div>
           )}
 
-          {/* Info kwa cash */}
-          {njia === 'cash' && (
+          {/* Info */}
+          {njia === 'cash' ? (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs">
               <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
               Malipo ya cash yanathibitishwa mara moja
             </div>
-          )}
-
-          {/* Info kwa mobile */}
-          {njia !== 'cash' && (
+          ) : (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-xs">
               <Smartphone size={14} className="mt-0.5 shrink-0" />
-              Malipo yatasubiri uthibitisho wa duka. Deni litapungua baada ya uthibitisho.
+              Malipo yatasubiri uthibitisho wa duka. Deni litapungua baada ya
+              uthibitisho.
             </div>
           )}
 

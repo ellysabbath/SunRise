@@ -58,6 +58,8 @@ import MySettings from './pages/shared/MySettings'
 
 // ---------- AUTH HOOK ----------
 import { useAuth } from './context/AuthContext'
+import RipotiMmiliki from './pages/mmiliki/RipotiMmiliki'
+import MmilikiUsers from './pages/mmiliki/MmilikiUsers'
 
 // ==================================================================
 // ProtectedRoute — kwa routes zisizo na Layout (mfano top-level)
@@ -155,6 +157,7 @@ export default function App() {
       >
         <Route index element={<MmilikiDashboard />} />
         <Route path="maduka" element={<MmilikiMaduka />} />
+        <Route path="users" element={<MmilikiUsers />} />
         <Route path="wafanyakazi" element={<MmilikiWafanyakazi />} />
         <Route path="mishahara" element={<MmilikiMishahara />} />
         <Route path="faida" element={<MmilikiFaida />} />
@@ -165,6 +168,7 @@ export default function App() {
         <Route path="matumizi" element={<MmilikiMatumizi />} />
         <Route path="ripoti-bidhaa" element={<MmilikiRipotiBidhaa />} />
         <Route path="store-manage" element={<MmilikiStoreManage />} />
+        <Route path="ripoti" element={<RipotiMmiliki />} />
         <Route path="uingiza" element={<UingizaVifaa role="mmiliki" />} />
         <Route path="profile" element={<MyProfile role="mmiliki" />} />
         <Route path="settings" element={<MySettings role="mmiliki" />} />

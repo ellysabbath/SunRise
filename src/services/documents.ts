@@ -11,7 +11,7 @@ export type AinaDocument =
   | "gharama"
   | "jumla";
 
-export type DocFormat = "pdf" | "csv" | "excel";
+export type DocFormat = "pdf" | "csv";
 
 export type HaliDocument = "tayari" | "inasindika" | "imemalizika";
 
@@ -39,51 +39,45 @@ export interface GenerateDocumentPayload {
   end?: string;
 }
 
+export interface Store {
+  id: string;
+  name: string;
+  location?: string;
+}
+
 // ==================================================================
 // API
 // ==================================================================
 export const documentsApi = {
-  // ------------------------------------------------------------------
-  // List
-  // ------------------------------------------------------------------
   list: (params?: { aina?: AinaDocument; store?: string; limit?: number }) =>
     api.get<DocumentMeta[]>("/documents/", { params }).then((r) => r.data),
 
-  // ------------------------------------------------------------------
-  // Get
-  // ------------------------------------------------------------------
   get: (id: string) =>
     api.get<DocumentMeta>(`/documents/${id}/`).then((r) => r.data),
 
-  // ------------------------------------------------------------------
-  // Generate
-  // ------------------------------------------------------------------
   generate: (payload: GenerateDocumentPayload) =>
     api.post<DocumentMeta>("/documents/generate/", payload).then((r) => r.data),
 
-  // ------------------------------------------------------------------
-  // Remove
-  // ------------------------------------------------------------------
   remove: (id: string) =>
     api.delete(`/documents/${id}/`).then((r) => r.data),
 
-  // ------------------------------------------------------------------
-  // ✅ Download PDF
-  // ------------------------------------------------------------------
+  // ✅ PDF
   downloadPdf: (id: string) =>
     api
-      .get(`/documents/${id}/download/`, {
-        responseType: "blob",
-      })
+      .get(`/documents/${id}/download/`, { responseType: "blob" })
       .then((r) => r.data as Blob),
 
-  // ------------------------------------------------------------------
-  // ✅ Download CSV
-  // ------------------------------------------------------------------
+  // ✅ CSV
   downloadCsv: (id: string) =>
     api
-      .get(`/documents/${id}/download-csv/`, {
-        responseType: "blob",
-      })
+      .get(`/documents/${id}/download-csv/`, { responseType: "blob" })
       .then((r) => r.data as Blob),
+};
+
+// ==================================================================
+// Stores — kwa selector
+// ==================================================================
+export const storesApi = {
+  list: () =>
+    api.get<Store[]>("/stores/").then((r) => r.data),
 };

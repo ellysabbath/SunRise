@@ -43,6 +43,7 @@ const navByRole: Record<Role, { to: string; label: string; icon: React.ElementTy
   mmiliki: [
     { to: '/mmiliki', label: 'Dashboard', icon: Home },
     { to: '/mmiliki/maduka', label: 'Maduka', icon: Store },
+     { to: '/mmiliki/users', label: 'Watumiaji', icon: Users },
     { to: '/mmiliki/wafanyakazi', label: 'Wafanyakazi', icon: Users },
     { to: '/mmiliki/faida', label: 'Faida/Hasara', icon: TrendingUp },
     { to: '/mmiliki/mauzo', label: 'Mauzo na Faida', icon: TrendingUp },
@@ -54,6 +55,7 @@ const navByRole: Record<Role, { to: string; label: string; icon: React.ElementTy
     { to: '/mmiliki/orders', label: 'Order Zote', icon: ShoppingBag },
     { to: '/mmiliki/matumizi', label: 'Maombi ya Matumizi', icon: Wallet },
     { to: '/mmiliki/store-manage', label: 'Store', icon: HouseCog },
+    { to: '/mmiliki/ripoti', label: 'Ripoti & Documents', icon: FileText },
     { to: '/mmiliki/notifications', label: 'Taarifa', icon: Bell },
     { to: '/mmiliki/profile', label: 'Wasifu', icon: PersonStanding },
     { to: '/mmiliki/settings', label: 'Mipangilio', icon: CogIcon },
