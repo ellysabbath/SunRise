@@ -1,0 +1,9 @@
+
+# SUNRISE GLASSES & ALUMINIUM PROFILES
+# Website: https://sunriseprofile.com
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://sunriseprofile.com/sitemap.xml
