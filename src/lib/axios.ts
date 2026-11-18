@@ -1,58 +1,65 @@
+
 import axios from "axios";
 
-// 1. Unda "instance" ya axios yenye baseURL
+// 1. Axios instance
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL,
-  headers: { "Content-Type": "application/json" },
+  timeout: 60000, // Sekunde 60
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
 
-// 2. REQUEST INTERCEPTOR — inaendesha KABLA ya kila request kutoka
+// 2. REQUEST INTERCEPTOR
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("access_token");
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
   return config;
 });
 
-// 3. RESPONSE INTERCEPTOR — inaendesha BAADA ya kila response kurudi
+// 3. RESPONSE INTERCEPTOR
 api.interceptors.response.use(
-  (r) => r,   // 3a. Kama response ni nzuri (2xx), rudisha kama ilivyo
+  (response) => response,
 
-  // 3b. Kama response ni error
   async (error) => {
-    const original = error.config;   // request ya awali
+    const original = error.config;
 
-    // Kama ni 401 (hauna ruhusa) na haijarudiwa mara ya pili
-    if (error.response?.status === 401 && !original._retry) {
-      original._retry = true;        // weka alama: tusirudie tena
+    if (error.response?.status === 401 && original && !original._retry) {
+      original._retry = true;
 
       const refresh = localStorage.getItem("refresh_token");
 
-      // Kama hakuna refresh token — mpeleke login
       if (!refresh) {
         window.location.href = "/login";
         return Promise.reject(error);
       }
 
       try {
-        // Omba access token mpya kwa refresh token
+        // Omba access token mpya
         const { data } = await axios.post(
           `${import.meta.env.VITE_API_URL}/auth/refresh/`,
-          { refresh }
+          { refresh },
+          { timeout: 60000 }
         );
 
-        // Hifadhi access mpya
         localStorage.setItem("access_token", data.access);
 
-        // Rudia request ya awali kwa token mpya
+        // Rudia request ya awali
         original.headers.Authorization = `Bearer ${data.access}`;
+
         return api(original);
-      } catch {
-        // Refresh yenyewe imeshindikana — safisha na mpeleke login
-        localStorage.clear();
+
+      } catch (refreshError) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+
         window.location.href = "/login";
-        return Promise.reject(error);
+
+        return Promise.reject(refreshError);
       }
     }
 
