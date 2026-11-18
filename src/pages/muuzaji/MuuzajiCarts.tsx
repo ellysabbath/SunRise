@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   ShoppingCart, Search, Filter, RefreshCw, X,
-  Package, Phone, CreditCard, CheckCircle2, XCircle,
+  Package, CreditCard, CheckCircle2, XCircle,
   Clock, AlertTriangle, Loader2, Check, Ban, Receipt,
 } from 'lucide-react'
 import { ordersApi } from '../../services/orders'

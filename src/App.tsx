@@ -1,5 +1,5 @@
+
 import { Routes, Route, Navigate } from 'react-router-dom'
-import type { ReactNode } from 'react'
 
 // ---------- LAYOUT ----------
 import Layout from './components/Layout'
@@ -49,6 +49,8 @@ import MmilikiRipotiBidhaa from './pages/mmiliki/MmilikiRipotiBidhaa'
 import MmilikiStoreManage from './pages/mmiliki/MmilikiStoreManage'
 import MmilikiMishahara from './pages/mmiliki/MmilikiMishahara'
 import UingizaVifaa from './pages/mmiliki/UingizaVifaa'
+import RipotiMmiliki from './pages/mmiliki/RipotiMmiliki'
+import MmilikiUsers from './pages/mmiliki/MmilikiUsers'
 
 // ---------- SHARED ----------
 import Notifications from './pages/shared/Notifications'
@@ -56,74 +58,66 @@ import NotificationDetail from './pages/shared/NotificationDetail'
 import MyProfile from './pages/shared/MyProfile'
 import MySettings from './pages/shared/MySettings'
 
-// ---------- AUTH HOOK ----------
-import { useAuth } from './context/AuthContext'
-import RipotiMmiliki from './pages/mmiliki/RipotiMmiliki'
-import MmilikiUsers from './pages/mmiliki/MmilikiUsers'
-
 // ==================================================================
-// ProtectedRoute — kwa routes zisizo na Layout (mfano top-level)
+// APP
 // ==================================================================
-function ProtectedRoute({
-  children,
-  allow,
-}: {
-  children: ReactNode
-  allow?: string[]
-}) {
-  const { user, loading } = useAuth()
 
-  // ✅ Onyesha spinner TU ikiwa bado hatujui user ni nani
-  if (loading && !user) {
-    return (
-      <div className="min-h-screen grid place-items-center bg-slate-50">
-        <div className="text-center">
-          <div className="w-10 h-10 border-4 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm text-slate-500 mt-3">Inapakia...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!user) return <Navigate to="/login" replace />
-  if (allow && !allow.includes(user.role)) return <Navigate to="/" replace />
-  return <>{children}</>
-}
-
-// ==================================================================
-// App
-// ==================================================================
 export default function App() {
   return (
     <Routes>
       {/* ================= PUBLIC ================= */}
+
       <Route path="/" element={<Landing />} />
+
       <Route path="/login" element={<Login />} />
+
       <Route path="/register" element={<Register />} />
+
       <Route path="/verify-phone" element={<VerifyPhone />} />
+
       <Route path="/forgot-password" element={<ForgotPassword />} />
+
       <Route path="/reset-password" element={<ResetPassword />} />
+
       <Route path="/reset-complete" element={<ResetComplete />} />
 
       {/* ================= MTEJA ================= */}
-      {/* ✅ Layout inajishughulikia yenyewe — hakuna ProtectedRoute nje */}
+
       <Route
         path="/mteja"
-        element={<Layout role="mteja" allow={['mteja', 'admin', 'mmiliki']} />}
+        element={
+          <Layout
+            role="mteja"
+            allow={['mteja', 'admin', 'mmiliki']}
+          />
+        }
       >
         <Route index element={<MtejaHome />} />
+
         <Route path="bidhaa" element={<MtejaBidhaa />} />
+
         <Route path="quotation" element={<MtejaQuotation />} />
+
         <Route path="orders" element={<MtejaOrders />} />
+
         <Route path="order/:id" element={<MtejaOrder />} />
+
         <Route path="deni" element={<MtejaDeni />} />
+
         <Route path="profile" element={<MyProfile role="mteja" />} />
+
         <Route path="settings" element={<MySettings role="mteja" />} />
+
         <Route path="notifications" element={<Notifications />} />
-        <Route path="notifications/:id" element={<NotificationDetail />} />
+
+        <Route
+          path="notifications/:id"
+          element={<NotificationDetail />}
+        />
       </Route>
 
       {/* ================= MUUZAJI ================= */}
+
       <Route
         path="/muuzaji"
         element={
@@ -134,79 +128,157 @@ export default function App() {
         }
       >
         <Route index element={<MuuzajiPOS />} />
+
         <Route path="risiti" element={<MuuzajiRisiti />} />
+
         <Route path="pokea" element={<MuuzajiPokeaBidhaa />} />
+
         <Route path="uingiza" element={<MuuzajiPokeaBidhaa />} />
+
         <Route path="wateja" element={<MuuzajiWateja />} />
+
         <Route path="carts" element={<MuuzajiCarts />} />
+
         <Route path="ripoti" element={<MuuzajiRipoti />} />
+
         <Route path="ripoti-bidhaa" element={<MuuzajiRipotiBidhaa />} />
+
         <Route path="store-manage" element={<MuuzajiStoreManage />} />
+
         <Route path="matumizi" element={<MuuzajiMatumizi />} />
+
         <Route path="mshahara" element={<MuuzajiMshahara />} />
+
         <Route path="profile" element={<MyProfile role="muuzaji" />} />
+
         <Route path="settings" element={<MySettings role="muuzaji" />} />
+
         <Route path="notifications" element={<Notifications />} />
-        <Route path="notifications/:id" element={<NotificationDetail />} />
+
+        <Route
+          path="notifications/:id"
+          element={<NotificationDetail />}
+        />
       </Route>
 
       {/* ================= MMILIKI ================= */}
+
       <Route
         path="/mmiliki"
-        element={<Layout role="mmiliki" allow={['mmiliki', 'admin']} />}
+        element={
+          <Layout
+            role="mmiliki"
+            allow={['mmiliki', 'admin']}
+          />
+        }
       >
         <Route index element={<MmilikiDashboard />} />
+
         <Route path="maduka" element={<MmilikiMaduka />} />
+
         <Route path="users" element={<MmilikiUsers />} />
+
         <Route path="wafanyakazi" element={<MmilikiWafanyakazi />} />
+
         <Route path="mishahara" element={<MmilikiMishahara />} />
+
         <Route path="faida" element={<MmilikiFaida />} />
+
         <Route path="zaka" element={<MmilikiZaka />} />
+
         <Route path="mauzo" element={<MmilikiMauzo />} />
+
         <Route path="orders" element={<MmilikiOrders />} />
+
         <Route path="wateja" element={<MmilikiWateja />} />
+
         <Route path="matumizi" element={<MmilikiMatumizi />} />
-        <Route path="ripoti-bidhaa" element={<MmilikiRipotiBidhaa />} />
-        <Route path="store-manage" element={<MmilikiStoreManage />} />
+
+        <Route
+          path="ripoti-bidhaa"
+          element={<MmilikiRipotiBidhaa />}
+        />
+
+        <Route
+          path="store-manage"
+          element={<MmilikiStoreManage />}
+        />
+
         <Route path="ripoti" element={<RipotiMmiliki />} />
-        <Route path="uingiza" element={<UingizaVifaa role="mmiliki" />} />
+
+        <Route
+          path="uingiza"
+          element={<UingizaVifaa role="mmiliki" />}
+        />
+
         <Route path="profile" element={<MyProfile role="mmiliki" />} />
+
         <Route path="settings" element={<MySettings role="mmiliki" />} />
+
         <Route path="notifications" element={<Notifications />} />
-        <Route path="notifications/:id" element={<NotificationDetail />} />
+
+        <Route
+          path="notifications/:id"
+          element={<NotificationDetail />}
+        />
       </Route>
 
       {/* ================= ADMIN ================= */}
+
       <Route
         path="/admin"
-        element={<Layout role="mmiliki" allow={['admin']} />}
+        element={
+          <Layout
+            role="mmiliki"
+            allow={['admin']}
+          />
+        }
       >
-        <Route index element={<Navigate to="uingiza" replace />} />
-        <Route path="uingiza" element={<UingizaVifaa role="admin" />} />
+        <Route
+          index
+          element={<Navigate to="uingiza" replace />}
+        />
+
+        <Route
+          path="uingiza"
+          element={<UingizaVifaa role="admin" />}
+        />
+
         <Route path="notifications" element={<Notifications />} />
-        <Route path="notifications/:id" element={<NotificationDetail />} />
+
+        <Route
+          path="notifications/:id"
+          element={<NotificationDetail />}
+        />
       </Route>
 
       {/* ================= 404 ================= */}
+
       <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }
 
 // ==================================================================
-// NotFound
+// NOT FOUND
 // ==================================================================
+
 function NotFound() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-50/30 grid place-items-center p-4">
       <div className="text-center max-w-md">
-        <div className="text-7xl font-black text-brand-600 mb-2">404</div>
+        <div className="text-7xl font-black text-brand-600 mb-2">
+          404
+        </div>
+
         <h1 className="text-2xl font-bold text-slate-900 mb-2">
           Ukurasa Haupo
         </h1>
+
         <p className="text-sm text-slate-500 mb-6">
           Ukurasa uliouomba haupo au umehamishwa.
         </p>
+
         <a
           href="/"
           className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-semibold hover:bg-brand-700"

@@ -1,4 +1,3 @@
-import api from "../lib/axios";
 import { productsApi, type Product } from "./products";
 import { customersApi, type Customer } from "./customers";
 import { ordersApi } from "./orders";

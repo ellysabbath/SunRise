@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   TrendingUp, TrendingDown, Wallet, RefreshCw, AlertTriangle,
-  Store, Loader2,
+  Store,
 } from 'lucide-react'
 import { storesApi, type Store as StoreType } from '../../services/stores'
 import { ordersApi, type Order } from '../../services/orders'

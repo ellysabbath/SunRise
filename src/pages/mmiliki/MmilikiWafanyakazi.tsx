@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Users, Plus, X, Save, Phone, CheckCircle2, XCircle,
   Store, RefreshCw, Loader2, AlertTriangle, Search,
-  ListFilter, UserPlus, Shield, UserCheck,
+  ListFilter,
 } from 'lucide-react'
 import {
   usersApi,

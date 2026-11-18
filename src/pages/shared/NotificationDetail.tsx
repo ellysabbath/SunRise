@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, CheckCheck, Trash2, Info, Inbox,
+  ArrowLeft, CheckCheck, Trash2, Inbox,
   Loader2, RefreshCw, AlertTriangle, CheckCircle2, XCircle,
   Mail, MessageSquare,
 } from 'lucide-react'

@@ -1,25 +1,75 @@
-import { useEffect, useMemo, useState } from 'react'
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ElementType } from 'react'
 import {
-  Package, CheckCircle2, AlertTriangle, Calendar, PackageX,
-  RotateCcw, RefreshCw, Search, ListFilter, Loader2,
-  XCircle, X, Clock, Store,
+  Package,
+  CheckCircle2,
+  AlertTriangle,
+  Calendar,
+  PackageX,
+  RotateCcw,
+  RefreshCw,
+  Search,
+  ListFilter,
+  Loader2,
+  XCircle,
+  Clock,
+  Store,
+  X,
+  ShieldAlert,
 } from 'lucide-react'
-import {
-  reportsApi,
-  type ProductReport,
-  type ReportType,
-  type ReportStatus,
-} from '../../services/reports'
+
+import { reportsApi } from '../../services/reports'
 import { storesApi, type Store as StoreType } from '../../services/stores'
 import { formatTsh, formatDate } from '../../lib/format'
 import { SkeletonLine } from '../../components/Skeleton'
 
-// ==================================================================
-// Meta
-// ==================================================================
+// ================================================================
+// Types
+// ================================================================
+
+type ReportType =
+  | 'uharibifu'
+  | 'expiry'
+  | 'upotevu'
+  | 'kurudisha_msambazaji'
+
+type ReportStatus =
+  | 'inasubiri'
+  | 'imethibitishwa'
+  | 'imekataliwa'
+
+interface ProductReport {
+  id: string
+  report_type: ReportType
+  status: ReportStatus
+  product_name?: string
+  product?: string
+  description?: string
+  report_date: string
+  reported_by_name?: string
+  quantity: string | number
+  estimated_value: string | number
+  store: string
+}
+
+interface ToastData {
+  msg: string
+  ok: boolean
+}
+
+// ================================================================
+// Metadata
+// ================================================================
+
 const AINA_META: Record<
   ReportType,
-  { label: string; tone: string; bg: string; Icon: React.ElementType }
+  {
+    label: string
+    tone: string
+    bg: string
+    Icon: ElementType
+  }
 > = {
   uharibifu: {
     label: 'Uharibifu',
@@ -49,7 +99,11 @@ const AINA_META: Record<
 
 const HALI_META: Record<
   ReportStatus,
-  { label: string; tone: string; Icon: React.ElementType }
+  {
+    label: string
+    tone: string
+    Icon: ElementType
+  }
 > = {
   inasubiri: {
     label: 'Inasubiri',
@@ -68,9 +122,35 @@ const HALI_META: Record<
   },
 }
 
-// ==================================================================
+// ================================================================
+// Helpers
+// ================================================================
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const response = error.response
+
+    if (typeof response === 'object' && response !== null && 'data' in response) {
+      const data = response.data
+
+      if (
+        typeof data === 'object' &&
+        data !== null &&
+        'detail' in data &&
+        typeof data.detail === 'string'
+      ) {
+        return data.detail
+      }
+    }
+  }
+
+  return fallback
+}
+
+// ================================================================
 // Page
-// ==================================================================
+// ================================================================
+
 export default function MmilikiRipotiBidhaa() {
   const [reports, setReports] = useState<ProductReport[]>([])
   const [stores, setStores] = useState<StoreType[]>([])
@@ -78,155 +158,213 @@ export default function MmilikiRipotiBidhaa() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [processing, setProcessing] = useState<string | null>(null)
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+
+  const [toast, setToast] = useState<ToastData | null>(null)
 
   const [q, setQ] = useState('')
   const [filterAina, setFilterAina] = useState<ReportType | 'zote'>('zote')
   const [filterHali, setFilterHali] = useState<ReportStatus | 'zote'>('zote')
 
-  // ------------------------------------------------------------------
-  // Load
-  // ------------------------------------------------------------------
-  const load = async () => {
+  // Confirmation modal state
+  const [reportToReject, setReportToReject] = useState<string | null>(null)
+
+  // ==============================================================
+  // Load reports
+  // ==============================================================
+
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
+
     try {
       const [reps, str] = await Promise.all([
         reportsApi.list(),
         storesApi.list(),
       ])
-      setReports(reps)
+
+      setReports(reps as ProductReport[])
       setStores(str)
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(
-        err?.response?.data?.detail ||
-          'Imeshindikana kupata ripoti. Angalia muunganisho.'
+        getErrorMessage(
+          err,
+          'Imeshindikana kupata ripoti. Angalia muunganisho.',
+        ),
       )
     } finally {
       setLoading(false)
     }
-  }
-
-  useEffect(() => {
-    load()
   }, [])
 
-  // ------------------------------------------------------------------
-  // Filter + search
-  // ------------------------------------------------------------------
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  // ==============================================================
+  // Toast
+  // ==============================================================
+
+  const showToast = (msg: string, ok: boolean) => {
+    setToast({ msg, ok })
+
+    window.setTimeout(() => {
+      setToast(null)
+    }, ok ? 3000 : 4000)
+  }
+
+  // ==============================================================
+  // Filter and search
+  // ==============================================================
+
   const filtered = useMemo(() => {
     return reports.filter((r) => {
-      if (filterAina !== 'zote' && r.report_type !== filterAina) return false
-      if (filterHali !== 'zote' && r.status !== filterHali) return false
+      if (filterAina !== 'zote' && r.report_type !== filterAina) {
+        return false
+      }
+
+      if (filterHali !== 'zote' && r.status !== filterHali) {
+        return false
+      }
 
       const query = q.toLowerCase().trim()
+
       if (!query) return true
+
       return (
-        r.id.toLowerCase().includes(query) ||
-        (r.product_name || '').toLowerCase().includes(query) ||
-        r.description.toLowerCase().includes(query)
+        String(r.id).toLowerCase().includes(query) ||
+        String(r.product_name || r.product || '')
+          .toLowerCase()
+          .includes(query) ||
+        String(r.description || '').toLowerCase().includes(query)
       )
     })
   }, [reports, q, filterAina, filterHali])
 
-  // ------------------------------------------------------------------
-  // Stats
-  // ------------------------------------------------------------------
+  // ==============================================================
+  // Statistics
+  // ==============================================================
+
   const stats = useMemo(() => {
     return {
       zote: reports.length,
-      inasubiri: reports.filter((r) => r.status === 'inasubiri').length,
-      imethibitishwa: reports.filter((r) => r.status === 'imethibitishwa')
-        .length,
-      imekataliwa: reports.filter((r) => r.status === 'imekataliwa').length,
+
+      inasubiri: reports.filter(
+        (r) => r.status === 'inasubiri',
+      ).length,
+
+      imethibitishwa: reports.filter(
+        (r) => r.status === 'imethibitishwa',
+      ).length,
+
+      imekataliwa: reports.filter(
+        (r) => r.status === 'imekataliwa',
+      ).length,
+
       jumlaHasara: reports
         .filter((r) =>
-          ['uharibifu', 'expiry', 'upotevu'].includes(r.report_type)
+          ['uharibifu', 'expiry', 'upotevu'].includes(r.report_type),
         )
-        .reduce((s, r) => s + parseFloat(r.estimated_value || '0'), 0),
+        .reduce(
+          (sum, r) => sum + Number(r.estimated_value || 0),
+          0,
+        ),
     }
   }, [reports])
 
-  // ------------------------------------------------------------------
-  // Thibitisha
-  // ------------------------------------------------------------------
+  // ==============================================================
+  // Approve report
+  // ==============================================================
+
   const handleThibitisha = async (id: string) => {
     setProcessing(id)
+
     try {
       await reportsApi.approve(id)
+
       setReports((prev) =>
         prev.map((r) =>
-          r.id === id ? { ...r, status: 'imethibitishwa' as ReportStatus } : r
-        )
+          r.id === id
+            ? { ...r, status: 'imethibitishwa' }
+            : r,
+        ),
       )
-      setToast({ msg: 'Ripoti imethibitishwa.', ok: true })
-      setTimeout(() => setToast(null), 3000)
-    } catch (err: any) {
-      setToast({
-        msg: err?.response?.data?.detail || 'Imeshindikana kuthibitisha.',
-        ok: false,
-      })
-      setTimeout(() => setToast(null), 4000)
+
+      showToast('Ripoti imethibitishwa.', true)
+    } catch (err: unknown) {
+      showToast(
+        getErrorMessage(err, 'Imeshindikana kuthibitisha.'),
+        false,
+      )
     } finally {
       setProcessing(null)
     }
   }
 
-  // ------------------------------------------------------------------
-  // Kataa
-  // ------------------------------------------------------------------
-  const handleKataa = async (id: string) => {
-    if (!confirm('Una uhakika unataka kukataa ripoti hii?')) return
-    setProcessing(id)
-    try {
-      await reportsApi.reject(id)
-      setReports((prev) =>
-        prev.map((r) =>
-          r.id === id ? { ...r, status: 'imekataliwa' as ReportStatus } : r
-        )
-      )
-      setToast({ msg: 'Ripoti imekataliwa.', ok: false })
-      setTimeout(() => setToast(null), 3000)
-    } catch (err: any) {
-      setToast({
-        msg: err?.response?.data?.detail || 'Imeshindikana kukataa.',
-        ok: false,
-      })
-      setTimeout(() => setToast(null), 4000)
-    } finally {
-      setProcessing(null)
-    }
+  // ==============================================================
+  // Open rejection confirmation modal
+  // ==============================================================
+
+  const funguaModalKataa = (id: string) => {
+    setReportToReject(id)
   }
 
-  // ==================================================================
+  // ==============================================================
+  // Reject report
+  // ==============================================================
+
+  const handleKataa = async () => {
+    if (!reportToReject) return
+
+    // API ya sasa haina reject endpoint.
+    // Hatubadilishi status bila kuthibitishwa na backend.
+    showToast(
+      'Kitendo cha kukataa hakipatikani bado. Ongeza reject endpoint kwenye services/reports.',
+      false,
+    )
+
+    setReportToReject(null)
+  }
+
+  // ==============================================================
   // Render
-  // ==================================================================
+  // ==============================================================
+
   return (
     <div className="space-y-5">
       {/* Header */}
+
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-            <Package size={26} className="text-brand-600" /> Ripoti za Bidhaa
+            <Package size={26} className="text-brand-600" />
+            Ripoti za Bidhaa
           </h1>
+
           <p className="text-sm text-slate-500 mt-1">
             Thibitisha au kataa ripoti za uharibifu, expiry, na upotevu
           </p>
         </div>
+
         <button
-          onClick={load}
+          onClick={() => void load()}
           disabled={loading}
           className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold hover:bg-slate-50 disabled:opacity-60 self-start sm:self-auto"
         >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          <RefreshCw
+            size={14}
+            className={loading ? 'animate-spin' : ''}
+          />
           Sasisha
         </button>
       </div>
 
-      {/* Stats */}
+      {/* Statistics */}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {loading ? (
-          Array.from({ length: 4 }).map((_, i) => <StatSkeleton key={i} />)
+          Array.from({ length: 4 }).map((_, i) => (
+            <StatSkeleton key={i} />
+          ))
         ) : (
           <>
             <Stat
@@ -235,18 +373,21 @@ export default function MmilikiRipotiBidhaa() {
               Icon={Package}
               tone="text-blue-600"
             />
+
             <Stat
               label="Zinasubiri"
               value={String(stats.inasubiri)}
               Icon={Clock}
               tone="text-amber-600"
             />
+
             <Stat
               label="Zimethibitishwa"
               value={String(stats.imethibitishwa)}
               Icon={CheckCircle2}
               tone="text-emerald-600"
             />
+
             <Stat
               label="Jumla ya Hasara"
               value={formatTsh(stats.jumlaHasara)}
@@ -257,13 +398,15 @@ export default function MmilikiRipotiBidhaa() {
         )}
       </div>
 
-      {/* Filters + Search */}
+      {/* Filters and search */}
+
       <div className="bg-white rounded-2xl border border-slate-200 p-3 md:p-4 space-y-3">
         <div className="relative">
           <Search
             size={18}
             className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
           />
+
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -272,29 +415,38 @@ export default function MmilikiRipotiBidhaa() {
           />
         </div>
 
+        {/* Status filters */}
+
         <div className="flex flex-wrap gap-2 items-center">
           <ListFilter size={14} className="text-slate-400" />
 
-          {/* Hali */}
-          {(['zote', 'inasubiri', 'imethibitishwa', 'imekataliwa'] as const).map(
-            (k) => (
-              <button
-                key={k}
-                onClick={() => setFilterHali(k)}
-                className={`px-3 py-1.5 rounded-lg text-xs border transition ${
-                  filterHali === k
-                    ? 'bg-brand-600 text-white border-brand-600 font-semibold'
-                    : 'bg-white border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                {k === 'zote' ? 'Hali Zote' : HALI_META[k].label}
-              </button>
-            )
-          )}
+          {(
+            [
+              'zote',
+              'inasubiri',
+              'imethibitishwa',
+              'imekataliwa',
+            ] as const
+          ).map((k) => (
+            <button
+              key={k}
+              onClick={() => setFilterHali(k)}
+              className={`px-3 py-1.5 rounded-lg text-xs border transition ${
+                filterHali === k
+                  ? 'bg-brand-600 text-white border-brand-600 font-semibold'
+                  : 'bg-white border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {k === 'zote' ? 'Hali Zote' : HALI_META[k].label}
+            </button>
+          ))}
         </div>
+
+        {/* Report type filters */}
 
         <div className="flex flex-wrap gap-2 items-center">
           <span className="text-xs text-slate-400">Aina:</span>
+
           <button
             onClick={() => setFilterAina('zote')}
             className={`px-3 py-1.5 rounded-lg text-xs border transition ${
@@ -305,8 +457,10 @@ export default function MmilikiRipotiBidhaa() {
           >
             Zote
           </button>
+
           {(Object.keys(AINA_META) as ReportType[]).map((k) => {
             const m = AINA_META[k]
+
             return (
               <button
                 key={k}
@@ -326,17 +480,24 @@ export default function MmilikiRipotiBidhaa() {
       </div>
 
       {/* Error */}
+
       {error && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+
           <div className="flex-1">{error}</div>
-          <button onClick={load} className="text-xs font-semibold underline">
+
+          <button
+            onClick={() => void load()}
+            className="text-xs font-semibold underline"
+          >
             Jaribu tena
           </button>
         </div>
       )}
 
-      {/* Loading — skeleton */}
+      {/* Loading */}
+
       {loading && (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -345,15 +506,18 @@ export default function MmilikiRipotiBidhaa() {
         </div>
       )}
 
-      {/* Empty */}
+      {/* Empty state */}
+
       {!loading && filtered.length === 0 && !error && (
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
           <Package size={40} className="mx-auto text-slate-300 mb-3" />
+
           <h3 className="font-semibold">
             {q || filterAina !== 'zote' || filterHali !== 'zote'
               ? 'Hakuna matokeo'
               : 'Hakuna ripoti bado'}
           </h3>
+
           <p className="text-sm text-slate-500 mt-1">
             {q || filterAina !== 'zote' || filterHali !== 'zote'
               ? 'Badilisha vichujio au utafutaji.'
@@ -362,7 +526,8 @@ export default function MmilikiRipotiBidhaa() {
         </div>
       )}
 
-      {/* List */}
+      {/* Reports list */}
+
       {!loading && filtered.length > 0 && (
         <div className="space-y-2">
           {filtered.map((r) => {
@@ -383,22 +548,26 @@ export default function MmilikiRipotiBidhaa() {
                     >
                       <ainaMeta.Icon size={18} />
                     </div>
+
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-sm">
                           #{r.id.slice(0, 8).toUpperCase()}
                         </span>
+
                         <span
                           className={`text-[10px] uppercase font-semibold ${ainaMeta.tone}`}
                         >
                           {ainaMeta.label}
                         </span>
+
                         <span
                           className={`inline-flex items-center gap-1 text-[10px] uppercase font-semibold ${haliMeta.tone}`}
                         >
                           <haliMeta.Icon size={9} />
                           {haliMeta.label}
                         </span>
+
                         {store && (
                           <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
                             <Store size={9} />
@@ -406,18 +575,22 @@ export default function MmilikiRipotiBidhaa() {
                           </span>
                         )}
                       </div>
+
                       <div className="text-sm truncate mt-0.5">
-                        {r.product_name || r.product}
+                        {r.product_name || r.product || 'Bidhaa haijatajwa'}
                       </div>
+
                       <div className="text-xs text-slate-500">
-                        {formatDate(r.report_date)} — {r.reported_by_name}
+                        {formatDate(r.report_date)} — {r.reported_by_name || 'Haijatajwa'}
                       </div>
                     </div>
                   </div>
+
                   <div className="sm:text-right shrink-0">
                     <div className="text-base font-bold text-slate-900">
                       {r.quantity} pcs
                     </div>
+
                     <div className="text-xs text-slate-500">
                       {formatTsh(r.estimated_value)}
                     </div>
@@ -434,7 +607,7 @@ export default function MmilikiRipotiBidhaa() {
                 {r.status === 'inasubiri' && (
                   <div className="mt-3 pt-3 border-t border-slate-100 flex gap-2">
                     <button
-                      onClick={() => handleThibitisha(r.id)}
+                      onClick={() => void handleThibitisha(r.id)}
                       disabled={isProcessing}
                       className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
                     >
@@ -445,8 +618,9 @@ export default function MmilikiRipotiBidhaa() {
                       )}
                       Thibitisha
                     </button>
+
                     <button
-                      onClick={() => handleKataa(r.id)}
+                      onClick={() => funguaModalKataa(r.id)}
                       disabled={isProcessing}
                       className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100 disabled:opacity-50"
                     >
@@ -461,10 +635,93 @@ export default function MmilikiRipotiBidhaa() {
         </div>
       )}
 
+      {/* ==========================================================
+          Confirmation Modal - Reject report
+      ========================================================== */}
+
+      {reportToReject && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setReportToReject(null)
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reject-modal-title"
+            className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 grid place-items-center">
+                  <ShieldAlert size={21} />
+                </div>
+
+                <div>
+                  <h2
+                    id="reject-modal-title"
+                    className="font-bold text-slate-900"
+                  >
+                    Kataa ripoti?
+                  </h2>
+
+                  <p className="text-xs text-slate-500">
+                    Uthibitisho wa kitendo
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setReportToReject(null)}
+                className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                aria-label="Funga modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5">
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Una uhakika unataka kukataa ripoti hii? Tafadhali hakikisha
+                umeikagua kabla ya kuendelea.
+              </p>
+
+              <div className="mt-4 p-3 rounded-xl bg-amber-50 border border-amber-100 text-amber-800 text-xs">
+                Kitendo hiki kinapaswa kuhifadhiwa kwenye mfumo baada ya
+                kuthibitishwa na seva.
+              </div>
+
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setReportToReject(null)}
+                  className="px-4 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50"
+                >
+                  Ghairi
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleKataa()}
+                  className="px-4 py-2.5 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
+                >
+                  Ndiyo, kataa ripoti
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast */}
+
       {toast && (
         <div
-          className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] text-white text-sm px-4 py-3 rounded-xl shadow-2xl max-w-md flex items-center gap-2 ${
+          className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-[110] text-white text-sm px-4 py-3 rounded-xl shadow-2xl max-w-md flex items-center gap-2 ${
             toast.ok ? 'bg-emerald-600' : 'bg-red-600'
           }`}
         >
@@ -473,6 +730,7 @@ export default function MmilikiRipotiBidhaa() {
           ) : (
             <XCircle size={16} className="shrink-0" />
           )}
+
           {toast.msg}
         </div>
       )}
@@ -480,9 +738,10 @@ export default function MmilikiRipotiBidhaa() {
   )
 }
 
-// ==================================================================
-// Stat
-// ==================================================================
+// ================================================================
+// Stat component
+// ================================================================
+
 function Stat({
   label,
   value,
@@ -491,7 +750,7 @@ function Stat({
 }: {
   label: string
   value: string
-  Icon: React.ElementType
+  Icon: ElementType
   tone: string
 }) {
   return (
@@ -501,7 +760,9 @@ function Stat({
       >
         <Icon size={18} />
       </div>
+
       <div className="text-xs text-slate-500 mt-3">{label}</div>
+
       <div className="text-base md:text-lg font-bold text-slate-900 mt-0.5 truncate">
         {value}
       </div>
@@ -509,9 +770,10 @@ function Stat({
   )
 }
 
-// ==================================================================
-// Skeleton
-// ==================================================================
+// ================================================================
+// Skeleton components
+// ================================================================
+
 function StatSkeleton() {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4">
@@ -528,12 +790,14 @@ function RipotiSkeleton() {
       <div className="flex flex-col sm:flex-row sm:justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 rounded-lg bg-slate-200 animate-pulse shrink-0" />
+
           <div className="min-w-0 flex-1 space-y-1.5">
             <SkeletonLine className="h-4 w-32" />
             <SkeletonLine className="h-3 w-48" />
             <SkeletonLine className="h-3 w-24" />
           </div>
         </div>
+
         <div className="sm:text-right space-y-1.5">
           <SkeletonLine className="h-5 w-16 ml-auto" />
           <SkeletonLine className="h-3 w-20 ml-auto" />

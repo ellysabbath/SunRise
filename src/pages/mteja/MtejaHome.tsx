@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Navigate } from 'react-router-dom'
 import {
-  Package, Search, Loader2, AlertTriangle, RefreshCw, X,
+  Package, Search,  AlertTriangle, RefreshCw, X,
   ShoppingCart, Plus, Minus, Trash2, ArrowRight,
 } from 'lucide-react'
 import {

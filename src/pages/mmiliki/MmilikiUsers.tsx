@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Users, Plus, Search, X, Loader2, Pencil, Trash2, Key, Power,
@@ -351,17 +351,6 @@ export default function MmilikiUsers() {
       setDeleting(false)
     }
   }
-
-  // ------------------------------------------------------------------
-  // Stats
-  // ------------------------------------------------------------------
-  const stats = useMemo(() => {
-    return {
-      total: users.length,
-      active: users.filter((u) => u.is_active).length,
-      inactive: users.filter((u) => !u.is_active).length,
-    }
-  }, [users])
 
   // ==================================================================
   // Render

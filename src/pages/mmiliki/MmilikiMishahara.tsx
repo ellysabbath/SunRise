@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Wallet, Banknote, CheckCircle2, Clock, Users, Zap,
   RefreshCw, AlertTriangle, Loader2, Search, ListFilter,
-  XCircle, Store, Plus, X, Save, UserCheck, Calendar,
+  XCircle, Store, Plus, X, Save, UserCheck,
 } from 'lucide-react'
 import { staffApi, type Salary, type SalaryStatus } from '../../services/staff'
 import { storesApi, type Store as StoreType } from '../../services/stores'

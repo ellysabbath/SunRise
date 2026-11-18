@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   ShoppingBag, Search, Filter, CheckCircle2, Clock, XCircle,
-  X, Package, Phone, CreditCard, AlertTriangle, Loader2, Check, Ban,
+  X, Package, CreditCard, AlertTriangle, Loader2, Check, Ban,
   RefreshCw,
 } from 'lucide-react'
 import {

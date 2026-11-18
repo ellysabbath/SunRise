@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import {
   Search, Plus, Minus, ShoppingCart, Check, Package, Store,
-  Loader2, AlertTriangle, RefreshCw, X,
+   AlertTriangle, RefreshCw, X,
 } from 'lucide-react'
 import {
   productsApi,

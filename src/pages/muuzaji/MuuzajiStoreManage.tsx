@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Package, AlertTriangle, Calendar, RotateCcw, PackageX, RefreshCcw,
+  Package, AlertTriangle,RotateCcw,PackageX, RefreshCcw,
   Search, CheckCircle2, Clock, XCircle, Store, User,
-  Layers, Truck, Eye, X, ListFilter, RefreshCw, Loader2, Lock,
+  Layers, Truck, Eye, X, ListFilter, RefreshCw,  Lock,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { productsApi, type Product } from '../../services/products'
