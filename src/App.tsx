@@ -1,6 +1,9 @@
 
 import { Routes, Route, Navigate } from 'react-router-dom'
 
+// ---------- SEO ----------
+import SEO from './components/SEO'
+
 // ---------- LAYOUT ----------
 import Layout from './components/Layout'
 
@@ -64,198 +67,233 @@ import MySettings from './pages/shared/MySettings'
 
 export default function App() {
   return (
-    <Routes>
-      {/* ================= PUBLIC ================= */}
+    <>
+      {/* SEO MANAGEMENT */}
+      <SEO />
 
-      <Route path="/" element={<Landing />} />
+      <Routes>
+        {/* ================= PUBLIC ================= */}
 
-      <Route path="/login" element={<Login />} />
+        <Route path="/" element={<Landing />} />
 
-      <Route path="/register" element={<Register />} />
+        <Route path="/login" element={<Login />} />
 
-      <Route path="/verify-phone" element={<VerifyPhone />} />
+        <Route path="/register" element={<Register />} />
 
-      <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/verify-phone" element={<VerifyPhone />} />
 
-      <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
 
-      <Route path="/reset-complete" element={<ResetComplete />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
-      {/* ================= MTEJA ================= */}
+        <Route path="/reset-complete" element={<ResetComplete />} />
 
-      <Route
-        path="/mteja"
-        element={
-          <Layout
-            role="mteja"
-            allow={['mteja', 'admin', 'mmiliki']}
+        {/* ================= MTEJA ================= */}
+
+        <Route
+          path="/mteja"
+          element={
+            <Layout
+              role="mteja"
+              allow={['mteja', 'admin', 'mmiliki']}
+            />
+          }
+        >
+          <Route index element={<MtejaHome />} />
+
+          <Route path="bidhaa" element={<MtejaBidhaa />} />
+
+          <Route path="quotation" element={<MtejaQuotation />} />
+
+          <Route path="orders" element={<MtejaOrders />} />
+
+          <Route path="order/:id" element={<MtejaOrder />} />
+
+          <Route path="deni" element={<MtejaDeni />} />
+
+          <Route
+            path="profile"
+            element={<MyProfile role="mteja" />}
           />
-        }
-      >
-        <Route index element={<MtejaHome />} />
 
-        <Route path="bidhaa" element={<MtejaBidhaa />} />
-
-        <Route path="quotation" element={<MtejaQuotation />} />
-
-        <Route path="orders" element={<MtejaOrders />} />
-
-        <Route path="order/:id" element={<MtejaOrder />} />
-
-        <Route path="deni" element={<MtejaDeni />} />
-
-        <Route path="profile" element={<MyProfile role="mteja" />} />
-
-        <Route path="settings" element={<MySettings role="mteja" />} />
-
-        <Route path="notifications" element={<Notifications />} />
-
-        <Route
-          path="notifications/:id"
-          element={<NotificationDetail />}
-        />
-      </Route>
-
-      {/* ================= MUUZAJI ================= */}
-
-      <Route
-        path="/muuzaji"
-        element={
-          <Layout
-            role="muuzaji"
-            allow={['muuzaji', 'mhazini', 'admin', 'mmiliki']}
+          <Route
+            path="settings"
+            element={<MySettings role="mteja" />}
           />
-        }
-      >
-        <Route index element={<MuuzajiPOS />} />
 
-        <Route path="risiti" element={<MuuzajiRisiti />} />
+          <Route path="notifications" element={<Notifications />} />
 
-        <Route path="pokea" element={<MuuzajiPokeaBidhaa />} />
-
-        <Route path="uingiza" element={<MuuzajiPokeaBidhaa />} />
-
-        <Route path="wateja" element={<MuuzajiWateja />} />
-
-        <Route path="carts" element={<MuuzajiCarts />} />
-
-        <Route path="ripoti" element={<MuuzajiRipoti />} />
-
-        <Route path="ripoti-bidhaa" element={<MuuzajiRipotiBidhaa />} />
-
-        <Route path="store-manage" element={<MuuzajiStoreManage />} />
-
-        <Route path="matumizi" element={<MuuzajiMatumizi />} />
-
-        <Route path="mshahara" element={<MuuzajiMshahara />} />
-
-        <Route path="profile" element={<MyProfile role="muuzaji" />} />
-
-        <Route path="settings" element={<MySettings role="muuzaji" />} />
-
-        <Route path="notifications" element={<Notifications />} />
-
-        <Route
-          path="notifications/:id"
-          element={<NotificationDetail />}
-        />
-      </Route>
-
-      {/* ================= MMILIKI ================= */}
-
-      <Route
-        path="/mmiliki"
-        element={
-          <Layout
-            role="mmiliki"
-            allow={['mmiliki', 'admin']}
+          <Route
+            path="notifications/:id"
+            element={<NotificationDetail />}
           />
-        }
-      >
-        <Route index element={<MmilikiDashboard />} />
+        </Route>
 
-        <Route path="maduka" element={<MmilikiMaduka />} />
-
-        <Route path="users" element={<MmilikiUsers />} />
-
-        <Route path="wafanyakazi" element={<MmilikiWafanyakazi />} />
-
-        <Route path="mishahara" element={<MmilikiMishahara />} />
-
-        <Route path="faida" element={<MmilikiFaida />} />
-
-        <Route path="zaka" element={<MmilikiZaka />} />
-
-        <Route path="mauzo" element={<MmilikiMauzo />} />
-
-        <Route path="orders" element={<MmilikiOrders />} />
-
-        <Route path="wateja" element={<MmilikiWateja />} />
-
-        <Route path="matumizi" element={<MmilikiMatumizi />} />
+        {/* ================= MUUZAJI ================= */}
 
         <Route
-          path="ripoti-bidhaa"
-          element={<MmilikiRipotiBidhaa />}
-        />
+          path="/muuzaji"
+          element={
+            <Layout
+              role="muuzaji"
+              allow={['muuzaji', 'mhazini', 'admin', 'mmiliki']}
+            />
+          }
+        >
+          <Route index element={<MuuzajiPOS />} />
 
-        <Route
-          path="store-manage"
-          element={<MmilikiStoreManage />}
-        />
+          <Route path="risiti" element={<MuuzajiRisiti />} />
 
-        <Route path="ripoti" element={<RipotiMmiliki />} />
+          <Route path="pokea" element={<MuuzajiPokeaBidhaa />} />
 
-        <Route
-          path="uingiza"
-          element={<UingizaVifaa role="mmiliki" />}
-        />
+          <Route path="uingiza" element={<MuuzajiPokeaBidhaa />} />
 
-        <Route path="profile" element={<MyProfile role="mmiliki" />} />
+          <Route path="wateja" element={<MuuzajiWateja />} />
 
-        <Route path="settings" element={<MySettings role="mmiliki" />} />
+          <Route path="carts" element={<MuuzajiCarts />} />
 
-        <Route path="notifications" element={<Notifications />} />
+          <Route path="ripoti" element={<MuuzajiRipoti />} />
 
-        <Route
-          path="notifications/:id"
-          element={<NotificationDetail />}
-        />
-      </Route>
-
-      {/* ================= ADMIN ================= */}
-
-      <Route
-        path="/admin"
-        element={
-          <Layout
-            role="mmiliki"
-            allow={['admin']}
+          <Route
+            path="ripoti-bidhaa"
+            element={<MuuzajiRipotiBidhaa />}
           />
-        }
-      >
-        <Route
-          index
-          element={<Navigate to="uingiza" replace />}
-        />
+
+          <Route
+            path="store-manage"
+            element={<MuuzajiStoreManage />}
+          />
+
+          <Route path="matumizi" element={<MuuzajiMatumizi />} />
+
+          <Route path="mshahara" element={<MuuzajiMshahara />} />
+
+          <Route
+            path="profile"
+            element={<MyProfile role="muuzaji" />}
+          />
+
+          <Route
+            path="settings"
+            element={<MySettings role="muuzaji" />}
+          />
+
+          <Route path="notifications" element={<Notifications />} />
+
+          <Route
+            path="notifications/:id"
+            element={<NotificationDetail />}
+          />
+        </Route>
+
+        {/* ================= MMILIKI ================= */}
 
         <Route
-          path="uingiza"
-          element={<UingizaVifaa role="admin" />}
-        />
+          path="/mmiliki"
+          element={
+            <Layout
+              role="mmiliki"
+              allow={['mmiliki', 'admin']}
+            />
+          }
+        >
+          <Route index element={<MmilikiDashboard />} />
 
-        <Route path="notifications" element={<Notifications />} />
+          <Route path="maduka" element={<MmilikiMaduka />} />
+
+          <Route path="users" element={<MmilikiUsers />} />
+
+          <Route
+            path="wafanyakazi"
+            element={<MmilikiWafanyakazi />}
+          />
+
+          <Route
+            path="mishahara"
+            element={<MmilikiMishahara />}
+          />
+
+          <Route path="faida" element={<MmilikiFaida />} />
+
+          <Route path="zaka" element={<MmilikiZaka />} />
+
+          <Route path="mauzo" element={<MmilikiMauzo />} />
+
+          <Route path="orders" element={<MmilikiOrders />} />
+
+          <Route path="wateja" element={<MmilikiWateja />} />
+
+          <Route path="matumizi" element={<MmilikiMatumizi />} />
+
+          <Route
+            path="ripoti-bidhaa"
+            element={<MmilikiRipotiBidhaa />}
+          />
+
+          <Route
+            path="store-manage"
+            element={<MmilikiStoreManage />}
+          />
+
+          <Route path="ripoti" element={<RipotiMmiliki />} />
+
+          <Route
+            path="uingiza"
+            element={<UingizaVifaa role="mmiliki" />}
+          />
+
+          <Route
+            path="profile"
+            element={<MyProfile role="mmiliki" />}
+          />
+
+          <Route
+            path="settings"
+            element={<MySettings role="mmiliki" />}
+          />
+
+          <Route path="notifications" element={<Notifications />} />
+
+          <Route
+            path="notifications/:id"
+            element={<NotificationDetail />}
+          />
+        </Route>
+
+        {/* ================= ADMIN ================= */}
 
         <Route
-          path="notifications/:id"
-          element={<NotificationDetail />}
-        />
-      </Route>
+          path="/admin"
+          element={
+            <Layout
+              role="mmiliki"
+              allow={['admin']}
+            />
+          }
+        >
+          <Route
+            index
+            element={<Navigate to="uingiza" replace />}
+          />
 
-      {/* ================= 404 ================= */}
+          <Route
+            path="uingiza"
+            element={<UingizaVifaa role="admin" />}
+          />
 
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+          <Route path="notifications" element={<Notifications />} />
+
+          <Route
+            path="notifications/:id"
+            element={<NotificationDetail />}
+          />
+        </Route>
+
+        {/* ================= 404 ================= */}
+
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </>
   )
 }
 
