@@ -1,5 +1,5 @@
 import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
+import { createRoot, hydrateRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App'
@@ -26,46 +26,58 @@ import { StokiProvider } from './context/StokiContext'
 import { DocumentProvider } from './context/DocumentContext'
 import { MshaharaProvider } from './context/MshaharaContext'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <BrowserRouter>
-      <StoreProvider>
-        <AuthProvider>
-          <CustomerProvider>
-            <CartProvider>
-              <OrderProvider>
-                <GRNProvider>
-                  <PendingCartProvider>
-                    <OmbiProvider>
-                      <DukaProvider>
-                        <UingizajiProvider>
-                          <MauzoProvider>
-                            <ZakaProvider>
-                              <NotificationProvider>
-                                <OrderAdminProvider>
-                                  <RipotiBidhaaProvider>
-                                    <StokiProvider>
-                                      <DocumentProvider>
-                                        <MshaharaProvider>
-                                          <App />
-                                        </MshaharaProvider>
-                                      </DocumentProvider>
-                                    </StokiProvider>
-                                  </RipotiBidhaaProvider>
-                                </OrderAdminProvider>
-                              </NotificationProvider>
-                            </ZakaProvider>
-                          </MauzoProvider>
-                        </UingizajiProvider>
-                      </DukaProvider>
-                    </OmbiProvider>
-                  </PendingCartProvider>
-                </GRNProvider>
-              </OrderProvider>
-            </CartProvider>
-          </CustomerProvider>
-        </AuthProvider>
-      </StoreProvider>
-    </BrowserRouter>
-  </StrictMode>
-)
+function Root() {
+  return (
+    <StrictMode>
+      <BrowserRouter>
+        <StoreProvider>
+          <AuthProvider>
+            <CustomerProvider>
+              <CartProvider>
+                <OrderProvider>
+                  <GRNProvider>
+                    <PendingCartProvider>
+                      <OmbiProvider>
+                        <DukaProvider>
+                          <UingizajiProvider>
+                            <MauzoProvider>
+                              <ZakaProvider>
+                                <NotificationProvider>
+                                  <OrderAdminProvider>
+                                    <RipotiBidhaaProvider>
+                                      <StokiProvider>
+                                        <DocumentProvider>
+                                          <MshaharaProvider>
+                                            <App />
+                                          </MshaharaProvider>
+                                        </DocumentProvider>
+                                      </StokiProvider>
+                                    </RipotiBidhaaProvider>
+                                  </OrderAdminProvider>
+                                </NotificationProvider>
+                              </ZakaProvider>
+                            </MauzoProvider>
+                          </UingizajiProvider>
+                        </DukaProvider>
+                      </OmbiProvider>
+                    </PendingCartProvider>
+                  </GRNProvider>
+                </OrderProvider>
+              </CartProvider>
+            </CustomerProvider>
+          </AuthProvider>
+        </StoreProvider>
+      </BrowserRouter>
+    </StrictMode>
+  )
+}
+
+const rootElement = document.getElementById('root')!
+
+if (rootElement.hasChildNodes()) {
+  // HTML tuli imetolewa na pre-rendering, tumia hydrate
+  hydrateRoot(rootElement, <Root />)
+} else {
+  // Uchambuzi wa kawaida au upande wa mteja
+  createRoot(rootElement).render(<Root />)
+}
