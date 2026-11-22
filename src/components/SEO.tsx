@@ -2,15 +2,15 @@ import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 
 // Lazima iendane kabisa na index.html
-const SITE_NAME = 'SUNRISE GLASSES & ALUMINIUM PROFILES'
+const SITE_NAME = 'SUNRISE PROFILE TUNDUMA'
 const SITE_URL = 'https://sunriseprofile.com'
 
 const DEFAULT_DESCRIPTION =
-  'Welcome to SUNRISE GLASSES & ALUMINIUM PROFILES. Explore quality glasses and aluminium profile products in Tanzania. Contact us for inquiries.'
+  'Welcome to SUNRISE PROFILE TUNDUMA. Explore quality glasses and aluminium profile products in Tanzania. Contact us for inquiries.'
 
 const PAGE_SEO: Record<string, { title: string; description: string }> = {
   '/': {
-    title: 'SUNRISE GLASSES & ALUMINIUM PROFILES | Quality Glasses & Aluminium Products',
+    title: 'SUNRISE PROFILE TUNDUMA | Quality Glasses & Aluminium Products',
     description: DEFAULT_DESCRIPTION,
   },
 }
