@@ -1,3 +1,4 @@
+
 import {
   createContext,
   useCallback,
@@ -5,137 +6,276 @@ import {
   useEffect,
   useState,
   type ReactNode,
-} from "react";
-import api from "../lib/axios";
+} from 'react'
 
-// ==================================================================
-// Types
-// ==================================================================
+import api from '../lib/axios'
+
+// ======================================================
+// USER ROLES
+// ======================================================
+
+export type UserRole =
+  | 'mteja'
+  | 'muuzaji'
+  | 'mhazini'
+  | 'mmiliki'
+  | 'admin'
+
+// ======================================================
+// USER TYPE
+// ======================================================
+
 export interface User {
-  id: string;
-  phone: string;
-  full_name: string;
-  role: string;
-  store_id?: string | null;
+  id: string
+  phone: string
+  full_name: string
+  role: UserRole
+  store_id?: string | null
+}
+
+// ======================================================
+// API RESPONSE TYPES
+// ======================================================
+
+interface LoginResponse {
+  access: string
+  refresh: string
+  user: {
+    id: string | number
+    phone?: string
+    full_name?: string
+    role: string
+    store_id?: string | number | null
+  }
 }
 
 interface AuthContextValue {
-  user: User | null;
-  isAuthenticated: boolean;
-  loading: boolean;
-  login: (phone: string, password: string) => Promise<User>;
-  logout: () => void;
-  refreshUser: () => Promise<User | null>;
+  user: User | null
+  isAuthenticated: boolean
+  loading: boolean
+  login: (phone: string, password: string) => Promise<User>
+  logout: () => void
+  refreshUser: () => Promise<User | null>
 }
 
-// ==================================================================
-// Context
-// ==================================================================
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+// ======================================================
+// VALIDATE USER ROLE
+// ======================================================
 
-// ==================================================================
-// Provider
-// ==================================================================
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+const VALID_ROLES: UserRole[] = [
+  'mteja',
+  'muuzaji',
+  'mhazini',
+  'mmiliki',
+  'admin',
+]
 
-  // ------------------------------------------------------------------
-  // 1. Pakia mtumiaji wakati app inafunguka (auto-login)
-  // ------------------------------------------------------------------
+function isValidUserRole(role: unknown): role is UserRole {
+  return (
+    typeof role === 'string' &&
+    VALID_ROLES.includes(role as UserRole)
+  )
+}
+
+// ======================================================
+// NORMALIZE USER DATA
+// ======================================================
+
+function normalizeUser(data: unknown): User {
+  if (!data || typeof data !== 'object') {
+    throw new Error('Taarifa za mtumiaji hazipo.')
+  }
+
+  const raw = data as Record<string, unknown>
+
+  if (
+    typeof raw.id !== 'string' &&
+    typeof raw.id !== 'number'
+  ) {
+    throw new Error('User ID haipo.')
+  }
+
+  if (!isValidUserRole(raw.role)) {
+    throw new Error('Aina ya akaunti haijatambulika.')
+  }
+
+  return {
+    id: String(raw.id),
+    phone: String(raw.phone ?? ''),
+    full_name: String(raw.full_name ?? ''),
+    role: raw.role,
+    store_id:
+      raw.store_id === null || raw.store_id === undefined
+        ? null
+        : String(raw.store_id),
+  }
+}
+
+// ======================================================
+// AUTH CONTEXT
+// ======================================================
+
+const AuthContext = createContext<AuthContextValue | undefined>(
+  undefined
+)
+
+// ======================================================
+// AUTH PROVIDER
+// ======================================================
+
+export function AuthProvider({
+  children,
+}: {
+  children: ReactNode
+}) {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  // ====================================================
+  // AUTO LOGIN
+  // ====================================================
+
   useEffect(() => {
-    let active = true;
+    let active = true
 
-    const init = async () => {
-      const token = localStorage.getItem("access_token");
-      if (!token) {
-        if (active) setLoading(false);
-        return;
+    const initializeAuth = async () => {
+      const accessToken = localStorage.getItem('access_token')
+
+      if (!accessToken) {
+        if (active) {
+          setLoading(false)
+        }
+        return
       }
 
       try {
-        const { data } = await api.get<User>("/auth/me/");
-        if (active) setUser(data);
+        const response = await api.get('/auth/me/')
+        const authenticatedUser = normalizeUser(response.data)
+
+        if (active) {
+          setUser(authenticatedUser)
+        }
       } catch {
-        // Token imeisha au si sahihi — safisha
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        if (active) setUser(null);
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+
+        if (active) {
+          setUser(null)
+        }
       } finally {
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false)
+        }
       }
-    };
-
-    init();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // ------------------------------------------------------------------
-  // 2. Login
-  // ------------------------------------------------------------------
-  const login = useCallback(async (phone: string, password: string) => {
-    const { data } = await api.post("/auth/login/", { phone, password });
-
-    localStorage.setItem("access_token", data.access);
-    localStorage.setItem("refresh_token", data.refresh);
-
-    // Weka default store_id kama backend haikurudishi (baadhi ya roles)
-    const u: User = {
-      ...data.user,
-      store_id: data.user.store_id ?? null,
-    };
-    setUser(u);
-    return u;
-  }, []);
-
-  // ------------------------------------------------------------------
-  // 3. Logout
-  // ------------------------------------------------------------------
-  const logout = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    setUser(null);
-  }, []);
-
-  // ------------------------------------------------------------------
-  // 4. Refresh user (kusoma upya baada ya kubadilisha data)
-  // ------------------------------------------------------------------
-  const refreshUser = useCallback(async () => {
-    try {
-      const { data } = await api.get<User>("/auth/me/");
-      setUser(data);
-      return data;
-    } catch {
-      return null;
     }
-  }, []);
 
-  // ------------------------------------------------------------------
-  // Value
-  // ------------------------------------------------------------------
+    initializeAuth()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  // ====================================================
+  // LOGIN
+  // ====================================================
+
+  const login = useCallback(
+    async (phone: string, password: string): Promise<User> => {
+      const response = await api.post<LoginResponse>(
+        '/auth/login/',
+        {
+          phone,
+          password,
+        }
+      )
+
+      const data = response.data
+
+      if (
+        !data ||
+        typeof data.access !== 'string' ||
+        typeof data.refresh !== 'string' ||
+        !data.user
+      ) {
+        throw new Error(
+          'Server haikurudisha taarifa kamili za login.'
+        )
+      }
+
+      const authenticatedUser = normalizeUser(data.user)
+
+      localStorage.setItem('access_token', data.access)
+      localStorage.setItem('refresh_token', data.refresh)
+
+      setUser(authenticatedUser)
+
+      return authenticatedUser
+    },
+    []
+  )
+
+  // ====================================================
+  // LOGOUT
+  // ====================================================
+
+  const logout = useCallback(() => {
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
+
+    setUser(null)
+  }, [])
+
+  // ====================================================
+  // REFRESH USER
+  // ====================================================
+
+  const refreshUser = useCallback(async (): Promise<User | null> => {
+    try {
+      const response = await api.get('/auth/me/')
+
+      const authenticatedUser = normalizeUser(response.data)
+
+      setUser(authenticatedUser)
+
+      return authenticatedUser
+    } catch {
+      return null
+    }
+  }, [])
+
+  // ====================================================
+  // CONTEXT VALUE
+  // ====================================================
+
+  const contextValue: AuthContextValue = {
+    user,
+    isAuthenticated: user !== null,
+    loading,
+    login,
+    logout,
+    refreshUser,
+  }
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated: !!user,
-        loading,
-        login,
-        logout,
-        refreshUser,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
-  );
+  )
 }
 
-// ==================================================================
-// Hook
-// ==================================================================
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be inside AuthProvider");
-  return ctx;
+// ======================================================
+// USE AUTH HOOK
+// ======================================================
+
+export function useAuth(): AuthContextValue {
+  const context = useContext(AuthContext)
+
+  if (!context) {
+    throw new Error(
+      'useAuth must be used inside AuthProvider'
+    )
+  }
+
+  return context
 }
