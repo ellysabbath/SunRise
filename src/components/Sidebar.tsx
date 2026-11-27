@@ -6,6 +6,7 @@ import {
   BarChart3, Truck, PackagePlus, HouseCog,
   HouseCogIcon, PackageX, CircleDollarSign, Banknote,
   PersonStanding, CogIcon, LogOut, AlertTriangle,
+  Car,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
@@ -55,6 +56,7 @@ const navByRole: Record<Role, { to: string; label: string; icon: React.ElementTy
     { to: '/mmiliki/orders', label: 'Order Zote', icon: ShoppingBag },
     { to: '/mmiliki/matumizi', label: 'Maombi ya Matumizi', icon: Wallet },
     { to: '/mmiliki/store-manage', label: 'Store', icon: HouseCog },
+    { to: '/mmiliki/safirisha', label: 'Safirisha bidhaa', icon: Car },
     { to: '/mmiliki/ripoti', label: 'Ripoti & Documents', icon: FileText },
     { to: '/mmiliki/notifications', label: 'Taarifa', icon: Bell },
     { to: '/mmiliki/profile', label: 'Wasifu', icon: PersonStanding },

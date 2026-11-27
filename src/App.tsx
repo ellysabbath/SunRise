@@ -54,6 +54,7 @@ import MmilikiMishahara from './pages/mmiliki/MmilikiMishahara'
 import UingizaVifaa from './pages/mmiliki/UingizaVifaa'
 import RipotiMmiliki from './pages/mmiliki/RipotiMmiliki'
 import MmilikiUsers from './pages/mmiliki/MmilikiUsers'
+import MmilikiManageStock from './pages/mmiliki/MmilikiManageStock'
 
 // ---------- SHARED ----------
 import Notifications from './pages/shared/Notifications'
@@ -198,6 +199,7 @@ export default function App() {
           }
         >
           <Route index element={<MmilikiDashboard />} />
+          
 
           <Route path="maduka" element={<MmilikiMaduka />} />
 
@@ -240,6 +242,10 @@ export default function App() {
           <Route
             path="uingiza"
             element={<UingizaVifaa role="mmiliki" />}
+          />
+                  <Route
+            path="safirisha"
+            element={<MmilikiManageStock role="mmiliki" />}
           />
 
           <Route
