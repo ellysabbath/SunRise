@@ -13,11 +13,8 @@ import {
   ShieldCheck,
   User,
   Loader2,
-  
   Store,
-  Wallet,
-  Crown,
-  Shield,
+  CheckCircle2,
 } from 'lucide-react'
 
 import type { LucideIcon } from 'lucide-react'
@@ -28,12 +25,7 @@ import api from '../../lib/axios'
 // USER ROLES
 // ================================================================
 
-type Role =
-  | 'mteja'
-  | 'muuzaji'
-  | 'mhazini'
-  | 'mmiliki'
-  | 'admin'
+type Role = 'mteja' | 'muuzaji'
 
 // ================================================================
 // ROLE CONFIGURATION
@@ -45,6 +37,7 @@ interface RoleOption {
   description: string
   Icon: LucideIcon
   color: string
+  activeBg: string
 }
 
 const ROLES: RoleOption[] = [
@@ -54,6 +47,7 @@ const ROLES: RoleOption[] = [
     description: 'Nunua bidhaa na angalia orders',
     Icon: User,
     color: 'text-blue-600',
+    activeBg: 'bg-blue-50',
   },
   {
     key: 'muuzaji',
@@ -61,27 +55,7 @@ const ROLES: RoleOption[] = [
     description: 'POS, wateja na mauzo',
     Icon: Store,
     color: 'text-emerald-600',
-  },
-  {
-    key: 'mhazini',
-    label: 'Mhazini',
-    description: 'Fedha, matumizi na miamala',
-    Icon: Wallet,
-    color: 'text-amber-600',
-  },
-  {
-    key: 'mmiliki',
-    label: 'Mmiliki',
-    description: 'Usimamizi wa biashara na taarifa',
-    Icon: Crown,
-    color: 'text-purple-600',
-  },
-  {
-    key: 'admin',
-    label: 'Administrator',
-    description: 'Usimamizi wa mfumo',
-    Icon: Shield,
-    color: 'text-red-600',
+    activeBg: 'bg-emerald-50',
   },
 ]
 
@@ -143,16 +117,16 @@ export default function Register() {
     // VALIDATE PHONE NUMBER
     // ------------------------------------------------------------
 
-    const formattedPhone = phone.replace(/\s/g, '')
+    const formattedPhone = cleanPhone(phone)
 
-    if (!/^0[67]\d{2}-?\d{3}-?\d{3}$/.test(formattedPhone)) {
+    if (!/^0[67]\d{8}$/.test(formattedPhone)) {
       setError(
         'Weka namba sahihi ya simu (mfano 0754-123-456)'
       )
       return
     }
 
-    const normalizedPhone = cleanPhone(phone)
+    const normalizedPhone = formattedPhone
 
     // ------------------------------------------------------------
     // VALIDATE PASSWORD
@@ -209,7 +183,9 @@ export default function Register() {
           replace: true,
         }
       )
+
     } catch (err: unknown) {
+
       const apiError = err as {
         response?: {
           data?: {
@@ -248,7 +224,9 @@ export default function Register() {
       // ----------------------------------------------------------
 
       if (data?.role?.length) {
-        setError(`Role si sahihi: ${data.role[0]}`)
+        setError(
+          `Aina ya akaunti si sahihi: ${data.role[0]}`
+        )
         return
       }
 
@@ -263,6 +241,7 @@ export default function Register() {
         'Imeshindikana kujisajili. Jaribu tena.'
 
       setError(detail)
+
     } finally {
       setLoading(false)
     }
@@ -281,7 +260,7 @@ export default function Register() {
 
         <Link
           to="/"
-          className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-brand-600 mb-6"
+          className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-brand-600 mb-6 transition"
         >
           <ArrowLeft size={14} />
           Rudi Nyumbani
@@ -299,7 +278,7 @@ export default function Register() {
               <UserPlus size={28} />
             </div>
 
-            <h1 className="text-2xl font-bold mt-3">
+            <h1 className="text-2xl font-bold mt-3 text-slate-800">
               Jisajili
             </h1>
 
@@ -322,7 +301,7 @@ export default function Register() {
 
               <label
                 htmlFor="fullName"
-                className="text-sm font-medium"
+                className="text-sm font-medium text-slate-700"
               >
                 Jina Kamili
               </label>
@@ -345,7 +324,7 @@ export default function Register() {
                   disabled={loading}
                   autoComplete="name"
                   required
-                  className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm disabled:bg-slate-50"
+                  className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none text-sm disabled:bg-slate-50 transition"
                 />
 
               </div>
@@ -358,7 +337,7 @@ export default function Register() {
 
               <label
                 htmlFor="phone"
-                className="text-sm font-medium"
+                className="text-sm font-medium text-slate-700"
               >
                 Namba ya Simu
               </label>
@@ -382,7 +361,7 @@ export default function Register() {
                   autoComplete="tel"
                   disabled={loading}
                   required
-                  className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm disabled:bg-slate-50"
+                  className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none text-sm disabled:bg-slate-50 transition"
                 />
 
               </div>
@@ -397,11 +376,11 @@ export default function Register() {
 
             <div>
 
-              <label className="text-sm font-medium">
+              <label className="text-sm font-medium text-slate-700">
                 Aina ya Akaunti
               </label>
 
-              <div className="grid grid-cols-2 gap-2 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
 
                 {ROLES.map((item) => {
                   const Icon = item.Icon
@@ -414,23 +393,33 @@ export default function Register() {
                       onClick={() => setRole(item.key)}
                       disabled={loading}
                       aria-pressed={active}
-                      className={`flex items-start gap-2 p-3 rounded-lg border text-left transition ${
+                      className={`relative flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${
                         active
-                          ? 'bg-brand-50 border-brand-500 ring-1 ring-brand-200'
-                          : 'border-slate-200 hover:bg-slate-50'
+                          ? `${item.activeBg} border-brand-500 ring-1 ring-brand-200`
+                          : 'border-slate-200 hover:bg-slate-50 hover:border-slate-300'
                       }`}
                     >
 
-                      <Icon
-                        size={18}
-                        className={`shrink-0 mt-0.5 ${
+                      <div
+                        className={`w-9 h-9 rounded-lg grid place-items-center shrink-0 ${
                           active
-                            ? item.color
-                            : 'text-slate-400'
+                            ? 'bg-white'
+                            : 'bg-slate-100'
                         }`}
-                      />
+                      >
 
-                      <div className="min-w-0">
+                        <Icon
+                          size={19}
+                          className={
+                            active
+                              ? item.color
+                              : 'text-slate-400'
+                          }
+                        />
+
+                      </div>
+
+                      <div className="min-w-0 flex-1">
 
                         <div
                           className={`text-sm font-semibold ${
@@ -442,11 +431,18 @@ export default function Register() {
                           {item.label}
                         </div>
 
-                        <div className="text-[10px] text-slate-500 leading-tight mt-0.5">
+                        <div className="text-[11px] text-slate-500 leading-tight mt-0.5">
                           {item.description}
                         </div>
 
                       </div>
+
+                      {active && (
+                        <CheckCircle2
+                          size={17}
+                          className="text-brand-600 shrink-0"
+                        />
+                      )}
 
                     </button>
                   )
@@ -466,7 +462,7 @@ export default function Register() {
 
               <label
                 htmlFor="password"
-                className="text-sm font-medium"
+                className="text-sm font-medium text-slate-700"
               >
                 Nywila
               </label>
@@ -489,7 +485,7 @@ export default function Register() {
                   autoComplete="new-password"
                   disabled={loading}
                   required
-                  className="w-full pl-10 pr-10 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm disabled:bg-slate-50"
+                  className="w-full pl-10 pr-10 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none text-sm disabled:bg-slate-50 transition"
                 />
 
                 <button
@@ -507,9 +503,9 @@ export default function Register() {
                   tabIndex={-1}
                 >
                   {showPassword ? (
-                    <EyeOff size={14} />
+                    <EyeOff size={15} />
                   ) : (
-                    <Eye size={14} />
+                    <Eye size={15} />
                   )}
                 </button>
 
@@ -523,7 +519,7 @@ export default function Register() {
 
               <label
                 htmlFor="confirmPassword"
-                className="text-sm font-medium"
+                className="text-sm font-medium text-slate-700"
               >
                 Rudia Nywila
               </label>
@@ -546,7 +542,7 @@ export default function Register() {
                   autoComplete="new-password"
                   disabled={loading}
                   required
-                  className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 outline-none text-sm disabled:bg-slate-50"
+                  className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none text-sm disabled:bg-slate-50 transition"
                 />
 
               </div>
@@ -558,7 +554,7 @@ export default function Register() {
             {error && (
               <div
                 role="alert"
-                className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 text-sm"
+                className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-100 text-red-700 text-sm"
               >
 
                 <AlertTriangle
@@ -578,7 +574,7 @@ export default function Register() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed transition"
             >
 
               {loading ? (
@@ -620,7 +616,7 @@ export default function Register() {
           <div className="mt-6 pt-4 border-t border-slate-100 text-center">
 
             <div className="inline-flex items-center gap-1.5 text-xs text-slate-500">
-              <ShieldCheck size={12} />
+              <ShieldCheck size={13} />
               Utapokea SMS ya OTP kuthibitisha namba yako
             </div>
 
